@@ -703,6 +703,20 @@ pub const Macro = struct {
     splat_index: ?i32 = null,
     doc: ?[]const u8 = null,
     visibility: Visibility = .Public,
+
+    pub fn create(allocator: std.mem.Allocator, name: []const u8, args: []*Arg, body: ?ASTNode) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .name = name,
+            .args = args,
+            .body = try Expressions.from(allocator, body),
+        };
+        return instance;
+    }
+
+    pub fn new(allocator: std.mem.Allocator, name: []const u8, args: []*Arg, body: ?ASTNode) !ASTNode {
+        return ASTNode { .macro = try create(allocator, name, args, body) };
+    }
 };
 
 pub fn UnaryExpression() type {
@@ -1186,24 +1200,11 @@ pub const Visibility = enum(i8) {
 const print = std.debug.print;
 const c_allocator = std.heap.c_allocator;
 
-fn inspect(x: anytype) []const u8 {
-    return std.fmt.allocPrint(c_allocator, "{}", if (@typeInfo(@TypeOf(x)) == .Struct and @typeInfo(@TypeOf(x)).Struct.fields.len == 1) x else .{x}) catch unreachable;
-}
-fn pp(x: anytype) void {
-    const string = inspect(x);
-    defer c_allocator.free(string);
-    print("{s}\n", .{string});
-}
-fn p(x: anytype) void {
-    const string = inspect(x);
-    defer c_allocator.free(string);
-    // print("{s}\n", .{string});
-}
-fn xprint(comptime fmt: []const u8, x: anytype) void {
-    const string = std.fmt.allocPrint(c_allocator, fmt, x) catch unreachable;
-    defer c_allocator.free(string);
-    // print("{s}\n", .{string});
-}
+const utils = @import("utils.zig");
+const inspect = utils.inspect;
+const pp = utils.pp;
+const p = utils.p;
+const xprint = utils.xprint;
 
 pub fn main() !void {
     var n: ASTNode = undefined;

@@ -1,4 +1,76 @@
 const std = @import("std");
+const NumberKind = @import("ast.zig").NumberKind;
+
+type: Type = .EOF,
+value: union(enum) {
+    char: u8,
+    string: []const u8,
+    symbol: []const u8,
+    nil: void,
+} = .nil,
+number_kind: NumberKind = .I32,
+line_number: i32 = 0,
+column_number: i32 = 0,
+filename: ?[]const u8 = null,
+delimiter_state: DelimiterState = .{},
+macro_state: MacroState = .{},
+passed_backslash_newline: bool = false,
+doc_buffer: ?void = null, // ?IO::Memory
+raw: []const u8 = "",
+start: i32 = 0,
+invalid_escape: bool = false,
+location: ?void = null, // ?Location
+
+pub const MacroState = struct {
+    whitespace: bool = true,
+    nest: i32 = 0,
+    control_nest: i32 = 0,
+    delimiter_state: ?DelimiterState = null,
+    beginning_of_line: bool = true,
+    yields: bool = false,
+    comment: bool = false,
+    heredocs: ?[]DelimiterState = null,
+};
+
+pub const DelimiterKind = enum {
+    STRING,
+    REGEX,
+    STRING_ARRAY,
+    SYMBOL_ARRAY,
+    COMMAND,
+    HEREDOC,
+};
+
+pub const DelimiterState = struct {
+    kind: DelimiterKind = .STRING,
+    nest: union(enum) { char: u8, string: []const u8 } = .{ .char = 0 },
+    end: union(enum) { char: u8, string: []const u8 } = .{ .char = 0 },
+    open_count: i32 = 0,
+    heredoc_indent: i32 = 0,
+    allow_escapes: bool = true,
+
+    pub fn withOpenCountDelta(self: @This(), delta: i32) @This() {
+        return .{
+            .kind = self.kind,
+            .nest = self.nest,
+            .end = self.end,
+            .open_count = self.open_count + delta,
+            .heredoc_indent = self.heredoc_indent,
+            .allow_escapes = self.allow_escapes,
+        };
+    }
+
+    pub fn withHeredocIndent(self: @This(), indent: i32) @This() {
+        return .{
+            .kind = self.kind,
+            .nest = self.nest,
+            .end = self.end,
+            .open_count = self.open_count,
+            .heredoc_indent = indent,
+            .allow_escapes = self.allow_escapes,
+        };
+    }
+};
 
 pub const Type = enum {
     // cd crystal-lang/crystal
@@ -221,7 +293,18 @@ pub const Type = enum {
     }
 };
 
+const print = std.debug.print;
+const c_allocator = std.heap.c_allocator;
+
+const utils = @import("utils.zig");
+const inspect = utils.inspect;
+const pp = utils.pp;
+const p = utils.p;
+const xprint = utils.xprint;
+
 pub fn main() void {
-    @import("std").debug.print("{}\n", .{Type.__LINE__});
-    @import("std").debug.print("{s}\n", .{Type.__LINE__.toString() ++ "bar"});
+    p(Type.__LINE__);
+    p(Type.__LINE__.toString());
+    p(Type.__LINE__.toString() ++ "bar");
+    p(@This() {});
 }
