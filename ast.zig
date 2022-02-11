@@ -127,7 +127,15 @@ pub const Nop = struct {
     }
 };
 
-pub const Nil = struct {};
+pub const Nil = struct {
+    pub fn create(allocator: std.mem.Allocator) !*@This() {
+        return try allocator.create(@This());
+    }
+
+    pub fn new(allocator: std.mem.Allocator) !ASTNode {
+        return ASTNode { .nil = try create(allocator) };
+    }
+};
 
 pub const Expressions = struct {
     pub const Keyword = enum {
@@ -958,7 +966,15 @@ pub const Union = struct {
     types: []ASTNode,
 };
 
-pub const Self = struct {};
+pub const Self = struct {
+    pub fn create(allocator: std.mem.Allocator) !*@This() {
+        return try allocator.create(@This());
+    }
+
+    pub fn new(allocator: std.mem.Allocator) !ASTNode {
+        return ASTNode { .self = try create(allocator) };
+    }
+};
 
 pub fn ControlExpression() type {
     return struct {
@@ -1127,7 +1143,15 @@ pub const MacroVar = struct {
     exps: ?[]ASTNode = null,
 };
 
-pub const Underscore = struct {};
+pub const Underscore = struct {
+    pub fn create(allocator: std.mem.Allocator) !*@This() {
+        return try allocator.create(@This());
+    }
+
+    pub fn new(allocator: std.mem.Allocator) !ASTNode {
+        return ASTNode { .underscore = try create(allocator) };
+    }
+};
 
 pub const Splat = UnaryExpression();
 
