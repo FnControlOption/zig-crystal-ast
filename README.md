@@ -19,7 +19,7 @@ class While < ASTNode
 end
 ```
 
-Zig:
+Zig (outdated, but same idea):
 
 ```zig
 pub const ASTNode = union(enum) {
