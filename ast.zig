@@ -1,4 +1,7 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+const Location = @import("location.zig");
 
 pub const Node = union(enum) {
     alias: *Alias,
@@ -95,19 +98,39 @@ pub const Node = union(enum) {
     @"while": *While,
     yield: *Yield,
 
-    pub fn isNop(self: @This()) bool {
+    pub fn startsAt(self: Node, location: ?Location) Node {
+        _ = location; // TODO
+        return self;
+    }
+
+    pub fn at(self: Node, node: Node) Node {
+        _ = node; // TODO
+        return self;
+    }
+
+    pub fn endsAt(self: Node, end_location: ?Location) Node {
+        _ = end_location; // TODO
+        return self;
+    }
+
+    // pub fn atEnd(self: Node, node: Node) Node {
+    //     _ = node; // TODO
+    //     return self;
+    // }
+
+    pub fn isNop(self: Node) bool {
         return self == .nop;
     }
 
-    pub fn isTrueLiteral(self: @This()) bool {
+    pub fn isTrueLiteral(self: Node) bool {
         return self == .bool_literal and self.bool_literal.value;
     }
 
-    pub fn isFalseLiteral(self: @This()) bool {
+    pub fn isFalseLiteral(self: Node) bool {
         return self == .bool_literal and !self.bool_literal.value;
     }
 
-    pub fn singleExpression(self: @This()) Node {
+    pub fn singleExpression(self: Node) Node {
         if (self == .expressions) {
             if (self.expressions.singleExpression()) |single_expression| {
                 return single_expression;
@@ -117,25 +140,26 @@ pub const Node = union(enum) {
     }
 };
 
-pub const Nop = struct {
-    pub fn create(allocator: std.mem.Allocator) !*@This() {
-        return try allocator.create(@This());
-    }
+fn Singleton(comptime name: []const u8) type {
+    return struct {
+        location: ?Location = null,
+        end_location: ?Location = null,
 
-    pub fn new(allocator: std.mem.Allocator) !Node {
-        return Node { .nop = try create(allocator) };
-    }
-};
+        pub fn allocate(allocator: Allocator) !*@This() {
+            var instance = try allocator.create(@This());
+            instance.* = .{}; // initialize fields to default values
+            return instance;
+        }
 
-pub const Nil = struct {
-    pub fn create(allocator: std.mem.Allocator) !*@This() {
-        return try allocator.create(@This());
-    }
+        pub fn new(allocator: Allocator) !Node {
+            return @unionInit(Node, name, try allocate(allocator));
+        }
+    };
+}
 
-    pub fn new(allocator: std.mem.Allocator) !Node {
-        return Node { .nil = try create(allocator) };
-    }
-};
+pub const Nop = Singleton("nop");
+
+pub const Nil = Singleton("nil");
 
 pub const Expressions = struct {
     pub const Keyword = enum {
@@ -144,23 +168,26 @@ pub const Expressions = struct {
         Begin,
     };
 
-    expressions: std.ArrayList(Node),
+    location: ?Location = null,
+    end_location: ?Location = null,
+
+    expressions: ArrayList(Node),
     keyword: Keyword = .None,
 
-    pub fn create(allocator: std.mem.Allocator, expressions: std.ArrayList(Node)) !*@This() {
+    pub fn allocate(allocator: Allocator, expressions: ArrayList(Node)) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .expressions = expressions };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, expressions: std.ArrayList(Node)) !Node {
-        return Node { .expressions = try create(allocator, expressions) };
+    pub fn new(allocator: Allocator, expressions: ArrayList(Node)) !Node {
+        return Node { .expressions = try allocate(allocator, expressions) };
     }
 
-    pub fn from(allocator: std.mem.Allocator, obj: anytype) !Node {
+    pub fn from(allocator: Allocator, obj: anytype) !Node {
         switch (@TypeOf(obj)) {
             @TypeOf(null) => return Nop.new(allocator),
-            std.ArrayList(Node) => {
+            ArrayList(Node) => {
                 switch (obj.items.len) {
                     0 => return Nop.new(allocator),
                     1 => return obj.items[0],
@@ -183,16 +210,19 @@ pub const Expressions = struct {
 };
 
 pub const BoolLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     value: bool,
 
-    pub fn create(allocator: std.mem.Allocator, value: bool) !*@This() {
+    pub fn allocate(allocator: Allocator, value: bool) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, value: bool) !Node {
-        return Node { .bool_literal = try create(allocator, value) };
+    pub fn new(allocator: Allocator, value: bool) !Node {
+        return Node { .bool_literal = try allocate(allocator, value) };
     }
 };
 
@@ -298,10 +328,13 @@ pub const NumberKind = enum {
 };
 
 pub const NumberLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     value: []const u8,
     kind: NumberKind = .@"i32",
 
-    pub fn create(allocator: std.mem.Allocator, value: anytype) !*@This() {
+    pub fn allocate(allocator: Allocator, value: anytype) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .value = try std.fmt.allocPrint(allocator, "{d}", .{value}),
@@ -310,8 +343,8 @@ pub const NumberLiteral = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, value: anytype) !Node {
-        return Node { .number_literal = try create(allocator, value) };
+    pub fn new(allocator: Allocator, value: anytype) !Node {
+        return Node { .number_literal = try allocate(allocator, value) };
     }
 
     pub fn hasSign(self: @This()) bool {
@@ -320,78 +353,93 @@ pub const NumberLiteral = struct {
 };
 
 pub const CharLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     value: u8,
 
-    pub fn create(allocator: std.mem.Allocator, value: u8) !*@This() {
+    pub fn allocate(allocator: Allocator, value: u8) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, value: u8) !Node {
-        return Node { .char_literal = try create(allocator, value) };
+    pub fn new(allocator: Allocator, value: u8) !Node {
+        return Node { .char_literal = try allocate(allocator, value) };
     }
 };
 
 pub const StringLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     value: []const u8,
 
-    pub fn create(allocator: std.mem.Allocator, value: []const u8) !*@This() {
+    pub fn allocate(allocator: Allocator, value: []const u8) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, value: []const u8) !Node {
-        return Node { .string_literal = try create(allocator, value) };
+    pub fn new(allocator: Allocator, value: []const u8) !Node {
+        return Node { .string_literal = try allocate(allocator, value) };
     }
 };
 
 pub const StringInterpolation = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     expressions: []Node,
     heredoc_indent: i32 = 0,
 
-    pub fn create(allocator: std.mem.Allocator, expressions: []Node) !*@This() {
+    pub fn allocate(allocator: Allocator, expressions: []Node) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .expressions = expressions };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, expressions: []Node) !Node {
-        return Node { .string_interpolation = try create(allocator, expressions) };
+    pub fn new(allocator: Allocator, expressions: []Node) !Node {
+        return Node { .string_interpolation = try allocate(allocator, expressions) };
     }
 };
 
 pub const SymbolLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     value: []const u8,
 
-    pub fn create(allocator: std.mem.Allocator, value: []const u8) !*@This() {
+    pub fn allocate(allocator: Allocator, value: []const u8) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, value: []const u8) !Node {
-        return Node { .symbol_literal = try create(allocator, value) };
+    pub fn new(allocator: Allocator, value: []const u8) !Node {
+        return Node { .symbol_literal = try allocate(allocator, value) };
     }
 };
 
 pub const ArrayLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     elements: []Node,
     of: ?Node = null,
     name: ?Node = null,
 
-    pub fn create(allocator: std.mem.Allocator, elements: []Node) !*@This() {
+    pub fn allocate(allocator: Allocator, elements: []Node) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .elements = elements };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, elements: []Node) !Node {
-        return Node { .array_literal = try create(allocator, elements) };
+    pub fn new(allocator: Allocator, elements: []Node) !Node {
+        return Node { .array_literal = try allocate(allocator, elements) };
     }
 
-    pub fn map(allocator: std.mem.Allocator, values: anytype, block: anytype) !Node {
+    pub fn map(allocator: Allocator, values: anytype, block: anytype) !Node {
         // TODO: validate block
         var new_values = try allocator.alloc(Node, values.len);
         for (values) |value, index| {
@@ -400,7 +448,7 @@ pub const ArrayLiteral = struct {
         return new(allocator, new_values);
     }
 
-    pub fn mapWithIndex(allocator: std.mem.Allocator, values: anytype, block: anytype) !Node {
+    pub fn mapWithIndex(allocator: Allocator, values: anytype, block: anytype) !Node {
         // TODO: validate block
         var new_values = try allocator.alloc(Node, values.len);
         for (values) |value, index| {
@@ -411,45 +459,59 @@ pub const ArrayLiteral = struct {
 };
 
 pub const HashLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     entries: []Entry,
     of: ?Node = null,
     name: ?Node = null,
 
-    pub fn create(allocator: std.mem.Allocator, entries: []Entry) !*@This() {
+    pub fn allocate(allocator: Allocator, entries: []Entry) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .entries = entries };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, entries: []Entry) !Node {
-        return Node { .hash_literal = try create(allocator, entries) };
+    pub fn new(allocator: Allocator, entries: []Entry) !Node {
+        return Node { .hash_literal = try allocate(allocator, entries) };
     }
 
     pub const Entry = struct { key: Node, value: Node };
 };
 
 pub const NamedTupleLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     entries: []Entry,
 
-    pub fn create(allocator: std.mem.Allocator, entries: []Entry) !*@This() {
+    pub fn allocate(allocator: Allocator, entries: []Entry) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .entries = entries };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, entries: []Entry) !Node {
-        return Node { .named_tuple_literal = try create(allocator, entries) };
+    pub fn new(allocator: Allocator, entries: []Entry) !Node {
+        return Node { .named_tuple_literal = try allocate(allocator, entries) };
     }
 
     pub const Entry = struct { key: []const u8, value: Node };
 };
 
 pub const RangeLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     from: Node,
     to: Node,
     is_exclusive: bool,
 
-    pub fn create(allocator: std.mem.Allocator, from: Node, to: Node, is_exclusive: bool) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        from: Node,
+        to: Node,
+        is_exclusive: bool,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .from = from,
@@ -459,12 +521,20 @@ pub const RangeLiteral = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, from: Node, to: Node, is_exclusive: bool) !Node {
-        return Node { .range_literal = try create(allocator, from, to, is_exclusive) };
+    pub fn new(
+        allocator: Allocator,
+        from: Node,
+        to: Node,
+        is_exclusive: bool,
+    ) !Node {
+        return Node { .range_literal = try allocate(allocator, from, to, is_exclusive) };
     }
 };
 
 pub const RegexOptions = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     ignore_case: bool = false,
     multiline: bool = false,
     extended: bool = false,
@@ -477,55 +547,71 @@ pub const RegexOptions = struct {
 };
 
 pub const RegexLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     value: Node,
     options: RegexOptions = .{},
 
-    pub fn create(allocator: std.mem.Allocator, value: Node) !*@This() {
+    pub fn allocate(allocator: Allocator, value: Node) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, value: Node) !Node {
-        return Node { .regex_literal = try create(allocator, value) };
+    pub fn new(allocator: Allocator, value: Node) !Node {
+        return Node { .regex_literal = try allocate(allocator, value) };
     }
 };
 
 pub const TupleLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     elements: []Node,
 
-    pub fn create(allocator: std.mem.Allocator, elements: []Node) !*@This() {
+    pub fn allocate(allocator: Allocator, elements: []Node) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .elements = elements };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, elements: []Node) !Node {
-        return Node { .tuple_literal = try create(allocator, elements) };
+    pub fn new(allocator: Allocator, elements: []Node) !Node {
+        return Node { .tuple_literal = try allocate(allocator, elements) };
     }
 };
 
 pub const Var = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
 
-    pub fn create(allocator: std.mem.Allocator, name: []const u8) !*@This() {
+    pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{ .name = name };
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, name: []const u8) !Node {
-        return Node { .@"var" = try create(allocator, name) };
+    pub fn new(allocator: Allocator, name: []const u8) !Node {
+        return Node { .@"var" = try allocate(allocator, name) };
     }
 };
 
 pub const Block = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     args: []*Var,
     body: Node,
     call: ?*Call = null,
     splat_index: ?i32 = null,
 
-    pub fn create(allocator: std.mem.Allocator, args: []*Var, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        args: []*Var,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .args = args,
@@ -534,37 +620,79 @@ pub const Block = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, args: []*Var, body: ?Node) !Node {
-        return Node { .block = try create(allocator, args, body) };
+    pub fn new(
+        allocator: Allocator,
+        args: []*Var,
+        body: ?Node,
+    ) !Node {
+        return Node { .block = try allocate(allocator, args, body) };
     }
 };
 
 pub const Call = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     obj: ?Node,
     name: []const u8,
-    args: []Node,
+    args: ArrayList(Node),
     block: ?*Block = null,
     block_arg: ?Node = null,
-    named_args: ?[]*NamedArgument = null,
+    named_args: ?ArrayList(*NamedArgument) = null,
     doc: ?[]const u8 = null,
     visibility: Visibility = .Public,
     is_global: bool = false,
     is_expansion: bool = false,
     has_parentheses: bool = false,
+
+    pub fn allocate(
+        allocator: Allocator,
+        obj: ?Node,
+        name: []const u8,
+        args: ArrayList(Node),
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .obj = obj,
+            .name = name,
+            .args = args,
+        };
+        return instance;
+    }
+
+    pub fn new(
+        allocator: Allocator,
+        obj: ?Node,
+        name: []const u8,
+        args: ArrayList(Node),
+    ) !Node {
+        return Node { .call = try allocate(allocator, obj, name, args) };
+    }
 };
 
 pub const NamedArgument = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     value: Node,
 };
 
 pub const If = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     cond: Node,
     then: Node,
     @"else": Node,
     is_ternary: bool = false,
 
-    pub fn create(allocator: std.mem.Allocator, cond: Node, then: ?Node, @"else": ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        cond: Node,
+        then: ?Node,
+        @"else": ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
@@ -574,17 +702,30 @@ pub const If = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, cond: Node, then: ?Node, @"else": ?Node) !Node {
-        return Node { .@"if" = try create(allocator, cond, then, @"else") };
+    pub fn new(
+        allocator: Allocator,
+        cond: Node,
+        then: ?Node,
+        @"else": ?Node,
+    ) !Node {
+        return Node { .@"if" = try allocate(allocator, cond, then, @"else") };
     }
 };
 
 pub const Unless = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     cond: Node,
     then: Node,
     @"else": Node,
 
-    pub fn create(allocator: std.mem.Allocator, cond: Node, then: ?Node, @"else": ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        cond: Node,
+        then: ?Node,
+        @"else": ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
@@ -594,57 +735,131 @@ pub const Unless = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, cond: Node, then: ?Node, @"else": ?Node) !Node {
-        return Node { .unless = try create(allocator, cond, then, @"else") };
+    pub fn new(
+        allocator: Allocator,
+        cond: Node,
+        then: ?Node,
+        @"else": ?Node,
+    ) !Node {
+        return Node { .unless = try allocate(allocator, cond, then, @"else") };
     }
 };
 
 pub const Assign = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     target: Node,
     value: Node,
     doc: ?[]const u8 = null,
 };
 
 pub const OpAssign = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     target: Node,
     op: []const u8,
     value: Node,
 };
 
 pub const MultiAssign = struct {
-    targets: []Node,
-    values: []Node,
+    location: ?Location = null,
+    end_location: ?Location = null,
+
+    targets: ArrayList(Node),
+    values: ArrayList(Node),
+
+    pub fn allocate(
+        allocator: Allocator,
+        targets: ArrayList(Node),
+        values: ArrayList(Node),
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .targets = targets,
+            .values = values,
+        };
+        return instance;
+    }
+
+    pub fn new(
+        allocator: Allocator,
+        targets: ArrayList(Node),
+        values: ArrayList(Node),
+    ) !Node {
+        return Node { .multi_assign = try allocate(allocator, targets, values) };
+    }
 };
 
 pub const InstanceVar = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
 };
 
 pub const ReadInstanceVar = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     obj: Node,
     name: []const u8,
 };
 
 pub const ClassVar = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
 };
 
 pub const Global = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
 };
 
-pub fn BinaryOp() type {
+fn BinaryOp(comptime name: []const u8) type {
     return struct {
+        location: ?Location = null,
+        end_location: ?Location = null,
+
         left: Node,
         right: Node,
+
+        pub fn allocate(
+            allocator: Allocator,
+            left: Node,
+            right: Node,
+        ) !*@This() {
+            var instance = try allocator.create(@This());
+            instance.* = .{
+                .left = left,
+                .right = right,
+            };
+            return instance;
+        }
+
+        pub fn new(
+            allocator: Allocator,
+            left: Node,
+            right: Node,
+        ) !Node {
+            return @unionInit(Node, name, try allocate(allocator, left, right));
+        }
     };
 }
 
-pub const And = BinaryOp();
+pub const And = BinaryOp("and");
 
-pub const Or = BinaryOp();
+pub const Or = BinaryOp("or");
 
 pub const Arg = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     external_name: []const u8,
     default_value: ?Node = null,
@@ -653,11 +868,17 @@ pub const Arg = struct {
 };
 
 pub const ProcNotation = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     inputs: ?[]Node = null,
     output: ?Node = null,
 };
 
 pub const Def = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     free_vars: ?[][]const u8 = null,
     receiver: ?Node = null,
     name: []const u8,
@@ -679,7 +900,12 @@ pub const Def = struct {
     assigns_special_var: bool = false,
     is_abstract: bool = false,
 
-    pub fn create(allocator: std.mem.Allocator, name: []const u8, args: []*Arg, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        name: []const u8,
+        args: []*Arg,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
@@ -689,12 +915,20 @@ pub const Def = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, name: []const u8, args: []*Arg, body: ?Node) !Node {
-        return Node { .def = try create(allocator, name, args, body) };
+    pub fn new(
+        allocator: Allocator,
+        name: []const u8,
+        args: []*Arg,
+        body: ?Node,
+    ) !Node {
+        return Node { .def = try allocate(allocator, name, args, body) };
     }
 };
 
 pub const Macro = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     args: []*Arg,
     body: Node,
@@ -704,7 +938,12 @@ pub const Macro = struct {
     doc: ?[]const u8 = null,
     visibility: Visibility = .Public,
 
-    pub fn create(allocator: std.mem.Allocator, name: []const u8, args: []*Arg, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        name: []const u8,
+        args: []*Arg,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
@@ -714,59 +953,99 @@ pub const Macro = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, name: []const u8, args: []*Arg, body: ?Node) !Node {
-        return Node { .macro = try create(allocator, name, args, body) };
+    pub fn new(
+        allocator: Allocator,
+        name: []const u8,
+        args: []*Arg,
+        body: ?Node,
+    ) !Node {
+        return Node { .macro = try allocate(allocator, name, args, body) };
     }
 };
 
-pub fn UnaryExpression() type {
+fn UnaryExpression(comptime name: []const u8) type {
     return struct {
+        location: ?Location = null,
+        end_location: ?Location = null,
+
         exp: Node,
+
+        pub fn allocate(allocator: Allocator, exp: Node) !*@This() {
+            var instance = try allocator.create(@This());
+            instance.* = .{ .exp = exp };
+            return instance;
+        }
+
+        pub fn new(allocator: Allocator, exp: Node) !Node {
+            return @unionInit(Node, name, try allocate(allocator, exp));
+        }
     };
 }
 
-pub const Not = UnaryExpression();
+pub const Not = UnaryExpression("not");
 
-pub const PointerOf = UnaryExpression();
+pub const PointerOf = UnaryExpression("pointer_of");
 
-pub const SizeOf = UnaryExpression();
+pub const SizeOf = UnaryExpression("size_of");
 
-pub const InstanceSizeOf = UnaryExpression();
+pub const InstanceSizeOf = UnaryExpression("instance_size_of");
 
-pub const Out = UnaryExpression();
+pub const Out = UnaryExpression("out");
 
 pub const OffsetOf = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     offsetof_type: Node,
     offset: Node,
 };
 
 pub const VisibilityModifier = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     modifier: Visibility,
     exp: Node,
     doc: ?[]const u8 = null,
 };
 
 pub const IsA = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     obj: Node,
     @"const": Node,
     is_nil_check: bool = false,
 };
 
 pub const RespondsTo = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     obj: Node,
     name: []const u8,
 };
 
 pub const Require = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     string: []const u8,
 };
 
 pub const When = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     conds: []Node,
     body: Node,
     is_exhaustive: bool = false,
 
-    pub fn create(allocator: std.mem.Allocator, conds: []Node, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        conds: []Node,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .conds = conds,
@@ -775,12 +1054,19 @@ pub const When = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, conds: []Node, body: ?Node) !Node {
-        return Node { .when = try create(allocator, conds, body) };
+    pub fn new(
+        allocator: Allocator,
+        conds: []Node,
+        body: ?Node,
+    ) !Node {
+        return Node { .when = try allocate(allocator, conds, body) };
     }
 };
 
 pub const Case = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     cond: ?Node,
     whens: []*When,
     @"else": ?Node,
@@ -790,18 +1076,27 @@ pub const Case = struct {
 pub const Select = struct {
     pub const When = struct { condition: Node, body: Node };
 
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     whens: []@This().When,
     @"else": ?Node = null,
 };
 
-pub const ImplicitObj = struct {};
+pub const ImplicitObj = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+};
 
 pub const Path = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     names: [][]const u8,
     is_global: bool = false,
     visibility: Visibility = .Public,
 
-    pub fn create(allocator: std.mem.Allocator, names: [][]const u8) !*@This() {
+    pub fn allocate(allocator: Allocator, names: [][]const u8) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .names = names,
@@ -809,12 +1104,15 @@ pub const Path = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, names: [][]const u8) !Node {
-        return Node { .path = try create(allocator, names) };
+    pub fn new(allocator: Allocator, names: [][]const u8) !Node {
+        return Node { .path = try allocate(allocator, names) };
     }
 };
 
 pub const ClassDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: *Path,
     body: Node,
     superclass: ?Node = null,
@@ -825,7 +1123,11 @@ pub const ClassDef = struct {
     is_struct: bool = false,
     visibility: Visibility = .Public,
 
-    pub fn create(allocator: std.mem.Allocator, name: *Path, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        name: *Path,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
@@ -834,12 +1136,19 @@ pub const ClassDef = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, name: *Path, body: ?Node) !Node {
-        return Node { .class_def = try create(allocator, name, body) };
+    pub fn new(
+        allocator: Allocator,
+        name: *Path,
+        body: ?Node,
+    ) !Node {
+        return Node { .class_def = try allocate(allocator, name, body) };
     }
 };
 
 pub const ModuleDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: *Path,
     body: Node,
     type_vars: ?[][]const u8 = null,
@@ -847,7 +1156,11 @@ pub const ModuleDef = struct {
     doc: ?[]const u8 = null,
     visibility: Visibility = .Public,
 
-    pub fn create(allocator: std.mem.Allocator, name: *Path, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        name: *Path,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
@@ -856,21 +1169,35 @@ pub const ModuleDef = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, name: *Path, body: ?Node) !Node {
-        return Node { .module_def = try create(allocator, name, body) };
+    pub fn new(
+        allocator: Allocator,
+        name: *Path,
+        body: ?Node,
+    ) !Node {
+        return Node { .module_def = try allocate(allocator, name, body) };
     }
 };
 
 pub const AnnotationDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: *Path,
     doc: ?[]const u8 = null,
 };
 
 pub const While = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     cond: Node,
     body: Node,
 
-    pub fn create(allocator: std.mem.Allocator, cond: Node, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        cond: Node,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
@@ -879,16 +1206,27 @@ pub const While = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, cond: Node, body: ?Node) !Node {
-        return Node { .@"while" = try create(allocator, cond, body) };
+    pub fn new(
+        allocator: Allocator,
+        cond: Node,
+        body: ?Node,
+    ) !Node {
+        return Node { .@"while" = try allocate(allocator, cond, body) };
     }
 };
 
 pub const Until = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     cond: Node,
     body: Node,
 
-    pub fn create(allocator: std.mem.Allocator, cond: Node, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        cond: Node,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
@@ -897,12 +1235,19 @@ pub const Until = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, cond: Node, body: ?Node) !Node {
-        return Node { .until = try create(allocator, cond, body) };
+    pub fn new(
+        allocator: Allocator,
+        cond: Node,
+        body: ?Node,
+    ) !Node {
+        return Node { .until = try allocate(allocator, cond, body) };
     }
 };
 
 pub const Generic = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: Node,
     type_vars: []Node,
     names_args: ?[]*NamedArgument = null,
@@ -917,22 +1262,31 @@ pub const Generic = struct {
 };
 
 pub const TypeDeclaration = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     @"var": Node,
     declared_type: Node,
     value: ?Node = null,
 };
 
 pub const UninitializedVar = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     @"var": Node,
     declared_type: Node,
 };
 
 pub const Rescue = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     body: Node,
     types: ?[]Node = null,
     name: ?[]const u8 = null,
 
-    pub fn create(allocator: std.mem.Allocator, body: ?Node) !*@This() {
+    pub fn allocate(allocator: Allocator, body: ?Node) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .body = try Expressions.from(allocator, body),
@@ -940,12 +1294,15 @@ pub const Rescue = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, body: ?Node) !Node {
-        return Node { .rescue = try create(allocator, body) };
+    pub fn new(allocator: Allocator, body: ?Node) !Node {
+        return Node { .rescue = try allocate(allocator, body) };
     }
 };
 
 pub const ExceptionHandler = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     body: Node,
     rescues: ?[]*Rescue = null,
     @"else": ?Node = null,
@@ -953,7 +1310,7 @@ pub const ExceptionHandler = struct {
     is_implicit: bool = false,
     is_suffix: bool = false,
 
-    pub fn create(allocator: std.mem.Allocator, body: ?Node) !*@This() {
+    pub fn allocate(allocator: Allocator, body: ?Node) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .body = try Expressions.from(allocator, body),
@@ -961,67 +1318,97 @@ pub const ExceptionHandler = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, body: ?Node) !Node {
-        return Node { .exception_handler = try create(allocator, body) };
+    pub fn new(allocator: Allocator, body: ?Node) !Node {
+        return Node { .exception_handler = try allocate(allocator, body) };
     }
 };
 
 pub const ProcLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     def: *Def,
 };
 
 pub const ProcPointer = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     obj: ?Node,
     name: []const u8,
     args: []Node,
 };
 
 pub const Union = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     types: []Node,
 };
 
-pub const Self = struct {
-    pub fn create(allocator: std.mem.Allocator) !*@This() {
-        return try allocator.create(@This());
-    }
+pub const Self = Singleton("self");
 
-    pub fn new(allocator: std.mem.Allocator) !Node {
-        return Node { .self = try create(allocator) };
-    }
-};
-
-pub fn ControlExpression() type {
+fn ControlExpression(comptime name: []const u8) type {
     return struct {
+        location: ?Location = null,
+        end_location: ?Location = null,
+
         exp: ?Node = null,
+
+        pub fn allocate(allocator: Allocator) !*@This() {
+            var instance = try allocator.create(@This());
+            instance.* = .{}; // initialize fields to default values
+            return instance;
+        }
+
+        pub fn new(allocator: Allocator) !Node {
+            return @unionInit(Node, name, try allocate(allocator));
+        }
     };
 }
 
-pub const Return = ControlExpression();
+pub const Return = ControlExpression("return");
 
-pub const Break = ControlExpression();
+pub const Break = ControlExpression("break");
 
-pub const Next = ControlExpression();
+pub const Next = ControlExpression("next");
 
 pub const Yield = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     exps: []Node,
     scope: ?Node = null,
     has_parentheses: bool = false,
 };
 
 pub const Include = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: Node,
 };
 
 pub const Extend = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: Node,
 };
 
 pub const LibDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     body: Node,
     visibility: Visibility = .Public,
 
-    pub fn create(allocator: std.mem.Allocator, name: []const u8, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        name: []const u8,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
@@ -1030,12 +1417,19 @@ pub const LibDef = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, name: []const u8, body: ?Node) !Node {
-        return Node { .lib_def = try create(allocator, name, body) };
+    pub fn new(
+        allocator: Allocator,
+        name: []const u8,
+        body: ?Node,
+    ) !Node {
+        return Node { .lib_def = try allocate(allocator, name, body) };
     }
 };
 
 pub const FunDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     args: []*Arg,
     return_type: ?Node = null,
@@ -1046,16 +1440,26 @@ pub const FunDef = struct {
 };
 
 pub const TypeDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     type_spec: Node,
 };
 
 pub const CStructOrUnionDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     body: Node,
     is_union: bool = false,
 
-    pub fn create(allocator: std.mem.Allocator, name: []const u8, body: ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        name: []const u8,
+        body: ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
@@ -1064,12 +1468,19 @@ pub const CStructOrUnionDef = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, name: []const u8, body: ?Node) !Node {
-        return Node { .c_struct_or_union_def = try create(allocator, name, body) };
+    pub fn new(
+        allocator: Allocator,
+        name: []const u8,
+        body: ?Node,
+    ) !Node {
+        return Node { .c_struct_or_union_def = try allocate(allocator, name, body) };
     }
 };
 
 pub const EnumDef = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: *Path,
     members: []Node,
     base_type: ?Node = null,
@@ -1078,12 +1489,18 @@ pub const EnumDef = struct {
 };
 
 pub const ExternalVar = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     type_spec: Node,
     real_name: ?[]const u8 = null,
 };
 
 pub const Alias = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: *Path,
     value: Node,
     doc: ?[]const u8 = null,
@@ -1091,24 +1508,39 @@ pub const Alias = struct {
 };
 
 pub const Metaclass = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: Node,
 };
 
 pub const Cast = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     obj: Node,
     to: Node,
 };
 
 pub const NilableCast = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     obj: Node,
     to: Node,
 };
 
 pub const TypeOf = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     expressions: []Node,
 };
 
 pub const Annotation = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     path: Path,
     args: []Node,
     named_args: ?[]*NamedArgument = null,
@@ -1116,22 +1548,36 @@ pub const Annotation = struct {
 };
 
 pub const MacroExpression = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     exp: Node,
     output: bool = true,
 };
 
 pub const MacroLiteral = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     value: []const u8,
 };
 
-pub const MacroVerbatim = UnaryExpression();
+pub const MacroVerbatim = UnaryExpression("macro_verbatim");
 
 pub const MacroIf = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     cond: Node,
     then: Node,
     @"else": Node,
 
-    pub fn create(allocator: std.mem.Allocator, cond: Node, then: ?Node, @"else": ?Node) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        cond: Node,
+        then: ?Node,
+        @"else": ?Node,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
@@ -1141,41 +1587,50 @@ pub const MacroIf = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, cond: Node, then: ?Node, @"else": ?Node) !Node {
-        return Node { .macro_if = try create(allocator, cond, then, @"else") };
+    pub fn new(
+        allocator: Allocator,
+        cond: Node,
+        then: ?Node,
+        @"else": ?Node,
+    ) !Node {
+        return Node { .macro_if = try allocate(allocator, cond, then, @"else") };
     }
 };
 
 pub const MacroFor = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     vars: []*Var,
     exp: Node,
     body: Node,
 };
 
 pub const MacroVar = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8,
     exps: ?[]Node = null,
 };
 
-pub const Underscore = struct {
-    pub fn create(allocator: std.mem.Allocator) !*@This() {
-        return try allocator.create(@This());
-    }
+pub const Underscore = Singleton("underscore");
 
-    pub fn new(allocator: std.mem.Allocator) !Node {
-        return Node { .underscore = try create(allocator) };
-    }
-};
+pub const Splat = UnaryExpression("splat");
 
-pub const Splat = UnaryExpression();
-
-pub const DoubleSplat = UnaryExpression();
+pub const DoubleSplat = UnaryExpression("double_splat");
 
 pub const MagicConstant = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     name: []const u8, // Symbol
 };
 
 pub const Asm = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     text: []const u8,
     outputs: ?[]*AsmOperand = null,
     inputs: ?[]*AsmOperand = null,
@@ -1187,6 +1642,9 @@ pub const Asm = struct {
 };
 
 pub const AsmOperand = struct {
+    location: ?Location = null,
+    end_location: ?Location = null,
+
     constraint: []const u8,
     exp: Node,
 };
@@ -1276,7 +1734,7 @@ pub fn main() !void {
     // p("{}\n", .{[]*Node});
     // p("{}\n", .{@TypeOf(x)});
     p("{}\n", .{try Expressions.from(allocator, try NumberLiteral.new(allocator, 1))});
-    p("{}\n", .{try Expressions.from(allocator, std.ArrayList(Node).init(allocator))});
+    p("{}\n", .{try Expressions.from(allocator, ArrayList(Node).init(allocator))});
     // {
     // var array = try allocator.alloc(Node, 0);
     // array = try allocator.alloc(Node, 1); array[0] = try NumberLiteral.new(allocator, 2); p("{}\n", .{try Expressions.from(allocator, array)});
@@ -1288,10 +1746,10 @@ pub fn main() !void {
     p("{}\n", .{try Unless.new(allocator, try BoolLiteral.new(allocator, true), null, null)});
     p("{}\n", .{try Def.new(allocator, "foo", try allocator.alloc(*Arg, 0), null)});
     p("{}\n", .{try When.new(allocator, try allocator.alloc(Node, 0), null)});
-    p("{}\n", .{try Path.create(allocator, try allocator.alloc([]const u8, 0))});
+    p("{}\n", .{try Path.allocate(allocator, try allocator.alloc([]const u8, 0))});
     p("{}\n", .{try Path.new(allocator, try allocator.alloc([]const u8, 0))});
-    p("{}\n", .{try ClassDef.new(allocator, try Path.create(allocator, try allocator.alloc([]const u8, 0)), null)});
-    p("{}\n", .{try ModuleDef.new(allocator, try Path.create(allocator, try allocator.alloc([]const u8, 0)), null)});
+    p("{}\n", .{try ClassDef.new(allocator, try Path.allocate(allocator, try allocator.alloc([]const u8, 0)), null)});
+    p("{}\n", .{try ModuleDef.new(allocator, try Path.allocate(allocator, try allocator.alloc([]const u8, 0)), null)});
     p("{}\n", .{try While.new(allocator, try BoolLiteral.new(allocator, true), null)});
     p("{}\n", .{try Until.new(allocator, try BoolLiteral.new(allocator, true), null)});
     p("{}\n", .{try Rescue.new(allocator, null)});
@@ -1303,14 +1761,14 @@ pub fn main() !void {
     p("{}\n", .{(try BoolLiteral.new(allocator, true)).isTrueLiteral()});
     p("{}\n", .{(try BoolLiteral.new(allocator, false)).isFalseLiteral()});
     p("{}\n", .{(try NumberLiteral.new(allocator, 1)).singleExpression()});
-    p("{}\n", .{(try Expressions.new(allocator, std.ArrayList(Node).init(allocator))).singleExpression()});
+    p("{}\n", .{(try Expressions.new(allocator, ArrayList(Node).init(allocator))).singleExpression()});
     {
-        var expressions = std.ArrayList(Node).init(allocator);
+        var expressions = ArrayList(Node).init(allocator);
         try expressions.append(try NumberLiteral.new(allocator, 1));
         p("{}\n", .{(try Expressions.new(allocator, expressions)).singleExpression()});
     }
     {
-        var expressions = std.ArrayList(Node).init(allocator);
+        var expressions = ArrayList(Node).init(allocator);
         try expressions.append(try NumberLiteral.new(allocator, 1));
         try expressions.append(try NumberLiteral.new(allocator, 2));
         p("{}\n", .{(try Expressions.new(allocator, expressions)).singleExpression()});
@@ -1321,12 +1779,12 @@ pub fn main() !void {
         values[1] = try BoolLiteral.new(allocator, false);
         const array = try ArrayLiteral.new(allocator, values);
         const array2 = try ArrayLiteral.map(allocator, values, struct {
-            fn call(_: std.mem.Allocator, node: Node) !Node {
+            fn call(_: Allocator, node: Node) !Node {
                 return try BoolLiteral.new(allocator, !node.bool_literal.*.value);
             }
         });
         const array3 = try ArrayLiteral.mapWithIndex(allocator, values, struct {
-            fn call(_: std.mem.Allocator, node: Node, index: usize) !Node {
+            fn call(_: Allocator, node: Node, index: usize) !Node {
                 return if (index == 0) try BoolLiteral.new(allocator, !node.bool_literal.*.value) else node;
             }
         });

@@ -1,11 +1,14 @@
 const Lexer = @This();
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+
 const Location = @import("location.zig");
 const Token = @import("token.zig");
 const Keyword = Token.Keyword;
 
-allocator: std.mem.Allocator = std.heap.page_allocator, // TODO
+allocator: Allocator,
 
 doc_enabled: bool = false,
 comments_enabled: bool = false,
@@ -46,10 +49,13 @@ error_message: ?[]const u8 = null,
 const HeredocList = std.SinglyLinkedList(Token.DelimiterState);
 
 fn new(string: []const u8) Lexer {
-    return .{ .string = string };
+    return .{
+        .allocator = std.heap.page_allocator, // TODO
+        .string = string,
+    };
 }
 
-fn nextToken(lexer: *Lexer) !Token {
+pub fn nextToken(lexer: *Lexer) !Token {
     // Check previous token:
     if (lexer.token.type == .newline or lexer.token.type == .eof) {
         // 1) After a newline or at the start of the stream (:EOF), a following
@@ -1256,7 +1262,7 @@ fn nextToken(lexer: *Lexer) !Token {
     return lexer.token;
 }
 
-fn tokenEndLocation(lexer: *Lexer) Location {
+pub fn tokenEndLocation(lexer: *Lexer) Location {
     if (lexer._token_end_location) |loc| {
         return loc;
     }
@@ -1288,7 +1294,7 @@ fn consumeDoc(lexer: *Lexer) !void {
         try doc_buffer.append('\n');
         try doc_buffer.appendSlice(lexer.stringRange(start_pos));
     } else {
-        var doc_buffer = std.ArrayList(u8).init(lexer.allocator);
+        var doc_buffer = ArrayList(u8).init(lexer.allocator);
         try doc_buffer.appendSlice(lexer.stringRange(start_pos));
         lexer.token.doc_buffer = doc_buffer;
     }
@@ -1456,18 +1462,18 @@ fn consumeCharUnicodeEscape(lexer: *Lexer) !u21 {
 fn consumeStringHexEscape(lexer: *Lexer) !u8 {
     const high = std.fmt.parseInt(u4, &[1]u8{lexer.nextChar()}, 16) catch {
         try lexer.raise("invalid hex escape");
-        return error.SyntaxError;
+        unreachable;
     };
 
     const low = std.fmt.parseInt(u4, &[1]u8{lexer.nextChar()}, 16) catch {
         try lexer.raise("invalid hex escape");
-        return error.SyntaxError;
+        unreachable;
     };
 
     return (@intCast(u8, high) << 4) | low;
 }
 
-fn consumeStringUnicodeEscape(lexer: *Lexer, buffer: *std.ArrayList(u8)) !void {
+fn consumeStringUnicodeEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void {
     if (lexer.peekNextChar() == '{') {
         lexer.skipChar();
         try lexer.consumeStringUnicodeBraceEscape(buffer);
@@ -1479,7 +1485,7 @@ fn consumeStringUnicodeEscape(lexer: *Lexer, buffer: *std.ArrayList(u8)) !void {
     }
 }
 
-fn consumeStringUnicodeBraceEscape(lexer: *Lexer, buffer: *std.ArrayList(u8)) !void {
+fn consumeStringUnicodeBraceEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void {
     while (true) {
         const codepoint = try lexer.consumeBracedUnicodeEscape(true);
         var encoded: [4]u8 = undefined;
@@ -1948,14 +1954,14 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
 fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
     const line = lexer.line_number;
     const column = lexer.column_number;
-    var buffer: std.ArrayList(u8) = undefined;
+    var buffer: ArrayList(u8) = undefined;
     var found_escape = false;
     while (true) {
         switch (lexer.nextChar()) {
             '\\' => {
                 if (!found_escape) {
                     found_escape = true;
-                    buffer = std.ArrayList(u8).init(lexer.allocator);
+                    buffer = ArrayList(u8).init(lexer.allocator);
                     try buffer.appendSlice(lexer.stringRange(start + 2));
                 }
                 switch (lexer.nextChar()) {
@@ -2188,26 +2194,26 @@ fn incrLineNumberWithColumn(lexer: *Lexer, column_number: ?usize) void {
     }
 }
 
-inline fn skipCharNoColumnIncrement(lexer: *Lexer) void {
+pub inline fn skipCharNoColumnIncrement(lexer: *Lexer) void {
     lexer.current_pos += 1;
 }
 
-inline fn nextCharNoColumnIncrement(lexer: *Lexer) u8 {
+pub inline fn nextCharNoColumnIncrement(lexer: *Lexer) u8 {
     lexer.skipCharNoColumnIncrement();
     return lexer.currentChar();
 }
 
-inline fn skipChar(lexer: *Lexer) void {
+pub inline fn skipChar(lexer: *Lexer) void {
     lexer.incrColumnNumber();
     lexer.skipCharNoColumnIncrement();
 }
 
-inline fn nextChar(lexer: *Lexer) u8 {
+pub inline fn nextChar(lexer: *Lexer) u8 {
     lexer.skipChar();
     return lexer.currentChar();
 }
 
-inline fn nextChars(lexer: *Lexer, comptime chars: []const u8) bool {
+pub inline fn nextChars(lexer: *Lexer, comptime chars: []const u8) bool {
     comptime var i = 0;
     inline while (i < chars.len) : (i += 1) {
         @setEvalBranchQuota(2000);
@@ -2245,17 +2251,24 @@ fn resetToken(lexer: *Lexer) void {
     lexer._token_end_location = null;
 }
 
-// nextTokenSkipSpace
-// nextTokenSkipSpaceOrNewline
+pub fn skipTokenAndSpace(lexer: *Lexer) !void {
+    _ = try lexer.nextToken();
+    try lexer.skipSpace();
+}
 
-pub fn nextTokenSkipStatementEnd(lexer: *Lexer) !void {
+pub fn skipTokenAndSpaceOrNewline(lexer: *Lexer) !void {
+    _ = try lexer.nextToken();
+    try lexer.skipSpaceOrNewline();
+}
+
+pub fn skipTokenAndStatementEnd(lexer: *Lexer) !void {
     _ = try lexer.nextToken();
     try lexer.skipStatementEnd();
 }
 
 // nextTokenNeverASymbol
 
-fn currentChar(lexer: Lexer) u8 {
+pub fn currentChar(lexer: Lexer) u8 {
     if (lexer.current_pos < lexer.string.len) {
         return lexer.string[lexer.current_pos];
     } else {
@@ -2296,7 +2309,7 @@ fn isIdent(name: []const u8) bool {
     return name.len > 0 and isIdentStart(name[0]);
 }
 
-fn isSetter(name: []const u8) bool {
+pub fn isSetter(name: []const u8) bool {
     return isIdent(name) and name[name.len - 1] == '=';
 }
 
@@ -2323,10 +2336,22 @@ fn closingChar(char: u8) u8 {
     };
 }
 
-// skipSpace
-// skipSpaceOrNewline
+pub fn skipSpace(lexer: *Lexer) !void {
+    while (lexer.token.type == .space) {
+        _ = try lexer.nextToken();
+    }
+}
 
-fn skipStatementEnd(lexer: *Lexer) !void {
+pub fn skipSpaceOrNewline(lexer: *Lexer) !void {
+    while (true) {
+        switch (lexer.token.type) {
+            .space, .newline => _ = try lexer.nextToken(),
+            else => break
+        }
+    }
+}
+
+pub fn skipStatementEnd(lexer: *Lexer) !void {
     while (true) {
         switch (lexer.token.type) {
             .space, .newline, .op_semicolon => {
@@ -2370,16 +2395,51 @@ fn setTokenRawFromStart(lexer: *Lexer, start: usize) void {
 }
 
 pub fn raise(lexer: *Lexer, message: []const u8) !void {
-    return lexer.raiseAt(message, lexer.line_number, lexer.column_number);
+    return lexer.raiseAt(
+        message,
+        lexer.line_number,
+        lexer.column_number,
+    );
 }
 
-pub fn raiseAt(lexer: *Lexer, message: []const u8, line_number: usize, column_number: usize) !void {
+pub fn raiseAt(
+    lexer: *Lexer,
+    message: []const u8,
+    line_number: usize,
+    column_number: usize,
+) !void {
     lexer.error_message = message;
     _ = line_number; _ = column_number; // TODO
     return error.SyntaxError;
 }
 
-fn main() !void {
+pub fn raiseFor(
+    lexer: *Lexer,
+    message: []const u8,
+    token: Token,
+) !void {
+    return lexer.raiseAt(
+        message,
+        token.line_number,
+        token.column_number,
+    );
+    // TODO: token.filename
+}
+
+pub fn raiseLoc(
+    lexer: *Lexer,
+    message: []const u8,
+    location: Location,
+) !void {
+    return lexer.raiseAt(
+        message,
+        location.line_number,
+        location.column_number,
+    );
+    // TODO: location.filename
+}
+
+pub fn main() !void {
     const p = @import("std").debug.print;
     const assert = @import("std").debug.assert;
     const escape = std.fmt.fmtSliceEscapeUpper;

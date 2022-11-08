@@ -1,5 +1,7 @@
 const Token = @This();
 const std = @import("std");
+const ArrayList = std.ArrayList;
+const FormatOptions = std.fmt.FormatOptions;
 const Location = @import("location.zig");
 
 pub const Keyword = enum {
@@ -129,10 +131,10 @@ pub const Keyword = enum {
         };
     }
 
-    pub fn format(keyword: Keyword, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(keyword: Keyword, comptime fmt: []const u8, opt: FormatOptions, writer: anytype) !void {
         _ = opt;
         _ = fmt;
-        try writer.print("{s}", .{ keyword.toString() });
+        try writer.writeAll(keyword.toString());
     }
 };
 
@@ -339,10 +341,10 @@ pub const Kind = enum {
         };
     }
 
-    pub fn format(kind: Kind, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(kind: Kind, comptime fmt: []const u8, opt: FormatOptions, writer: anytype) !void {
         _ = opt;
         _ = fmt;
-        try writer.print("{s}", .{ kind.toString() });
+        try writer.writeAll(kind.toString());
     }
 
     pub fn isOperator(kind: Kind) bool {
@@ -373,7 +375,7 @@ pub const Value = union(enum) {
     char: u8,
     utf8: u21,
     string: []const u8,
-    buffer: std.ArrayList(u8),
+    buffer: ArrayList(u8),
     keyword: Keyword,
     nil,
 };
@@ -387,7 +389,7 @@ filename: ?[]const u8 = null,
 delimiter_state: DelimiterState = .{},
 macro_state: MacroState = .{},
 passed_backslash_newline: bool = false,
-doc_buffer: ?std.ArrayList(u8) = null,
+doc_buffer: ?ArrayList(u8) = null,
 raw: []const u8 = "",
 start: usize = 0,
 invalid_escape: bool = false,
@@ -499,15 +501,13 @@ pub fn isKeyword(token: Token, keyword: Keyword) bool {
     return token.isAnyKeyword() and token.value.keyword == keyword;
 }
 
-pub fn format(token: Token, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = opt;
+pub fn toString(token: Token, writer: anytype) !void {
     switch (token.value) {
         .char => |char| return writer.writeByte(char),
         .utf8 => |codepoint| {
-            var buffer: [4]u8 = undefined;
-            if (std.unicode.utf8Encode(codepoint, &buffer)) |length| {
-                return writer.writeAll(buffer[0..length]);
+            var encoded: [4]u8 = undefined;
+            if (std.unicode.utf8Encode(codepoint, &encoded)) |length| {
+                return writer.writeAll(encoded[0..length]);
             } else |_| {}
         },
         .string => |string| return writer.writeAll(string),
@@ -516,6 +516,12 @@ pub fn format(token: Token, comptime fmt: []const u8, opt: std.fmt.FormatOptions
         else => {},
     }
     return writer.print("{}", .{token.type});
+}
+
+pub fn format(token: Token, comptime fmt: []const u8, opt: FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = opt;
+    return token.toString(writer);
 }
 
 pub fn copyFrom(self: *Token, other: Token) void {
@@ -540,7 +546,7 @@ pub fn main() void {
     p("{}\n", .{Kind.op_percent.isAssignmentOperator()});
     p("{}\n", .{MacroState{}});
     p("{}\n", .{DelimiterState{}});
-    p("{}\n", .{DelimiterState.new(.regex, "foo", "bar")});
+    p("{}\n", .{DelimiterState.new(.regex, '{', '}')});
     p("{}\n", .{(DelimiterState{}).withOpenCountDelta(3)});
     p("{}\n", .{(DelimiterState{}).withHeredocIndent(5)});
     p("{}\n", .{Token{}});

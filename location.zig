@@ -13,8 +13,8 @@ pub fn new(filename: ?[]const u8, line_number: usize, column_number: usize) Loca
     };
 }
 
-pub fn dirname(loc: Location) ?[]const u8 {
-    if (loc.filename) |filename| {
+pub fn dirname(location: Location) ?[]const u8 {
+    if (location.filename) |filename| {
         if (std.fs.path.dirname(filename)) |result| {
             return result;
         }
@@ -23,22 +23,22 @@ pub fn dirname(loc: Location) ?[]const u8 {
     return null;
 }
 
-pub fn isBetween(loc: Location, min: ?Location, max: ?Location) bool {
+pub fn isBetween(location: Location, min: ?Location, max: ?Location) bool {
     if (min) |a| {
         if (max) |b| {
-            return a.compare(.lte, loc) and loc.compare(.lte, b);
+            return a.compare(.lte, location) and location.compare(.lte, b);
         }
     }
     return false;
 }
 
-pub fn format(loc: Location, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+pub fn format(location: Location, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
     _ = opt;
     _ = fmt;
-    if (loc.filename) |filename| {
-        try writer.print("{s}", .{filename});
+    if (location.filename) |filename| {
+        try writer.writeAll(filename);
     }
-    try writer.print(":{}:{}", .{ loc.line_number, loc.column_number });
+    try writer.print(":{}:{}", .{ location.line_number, location.column_number });
 }
 
 pub fn order(a: Location, b: Location) ?std.math.Order {
