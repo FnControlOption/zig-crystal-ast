@@ -3,6 +3,7 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const FormatOptions = std.fmt.FormatOptions;
 const Location = @import("location.zig");
+const NumberKind = @import("ast.zig").NumberKind;
 
 pub const Keyword = enum {
     abstract,
@@ -382,7 +383,7 @@ pub const Value = union(enum) {
 
 type: Kind = .eof,
 value: Value = .nil,
-// number_kind: NumberKind = .i32,
+number_kind: NumberKind = .i32,
 line_number: usize = 0,
 column_number: usize = 0,
 filename: ?[]const u8 = null,
@@ -432,6 +433,13 @@ pub const DelimiterKind = enum {
 pub const Delimiter = union(enum) {
     char: u8,
     string: []const u8,
+
+    pub fn charOrNull(delimiter: Delimiter) ?u8 {
+        return switch (delimiter) {
+            .char => |char| char,
+            .string => null,
+        };
+    }
 };
 
 pub const DelimiterState = struct {
@@ -461,16 +469,16 @@ pub const DelimiterState = struct {
         };
     }
 
-    pub fn withOpenCountDelta(state: DelimiterState, delta: i32) DelimiterState {
-        return .{
-            .kind = state.kind,
-            .nest = state.nest,
-            .end = state.end,
-            .open_count = state.open_count + delta,
-            .heredoc_indent = state.heredoc_indent,
-            .allow_escapes = state.allow_escapes,
-        };
-    }
+    // pub fn withOpenCountDelta(state: DelimiterState, delta: i32) DelimiterState {
+    //     return .{
+    //         .kind = state.kind,
+    //         .nest = state.nest,
+    //         .end = state.end,
+    //         .open_count = state.open_count + delta,
+    //         .heredoc_indent = state.heredoc_indent,
+    //         .allow_escapes = state.allow_escapes,
+    //     };
+    // }
 
     pub fn withHeredocIndent(state: DelimiterState, indent: i32) DelimiterState {
         return .{
@@ -527,7 +535,7 @@ pub fn format(token: Token, comptime fmt: []const u8, opt: FormatOptions, writer
 pub fn copyFrom(self: *Token, other: Token) void {
     self.type = other.type;
     self.value = other.value;
-    // self.number_kind = other.number_kind;
+    self.number_kind = other.number_kind;
     self.line_number = other.line_number;
     self.column_number = other.column_number;
     self.filename = other.filename;

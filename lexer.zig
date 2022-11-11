@@ -8,6 +8,10 @@ const Location = @import("location.zig");
 const Token = @import("token.zig");
 const Keyword = Token.Keyword;
 
+const ast = @import("ast.zig");
+const StringInterpolation = ast.StringInterpolation;
+const StringLiteral = ast.StringLiteral;
+
 allocator: Allocator,
 
 doc_enabled: bool = false,
@@ -38,7 +42,8 @@ stacked_column_number: usize = 1,
 _token_end_location: ?Location = null,
 // string_pool: StringPool = .{},
 
-heredocs: HeredocList = .{},
+heredocs: ArrayList(Heredoc),
+consuming_heredocs: bool = false,
 
 // macro_expansion_pragmas = null,
 
@@ -46,16 +51,84 @@ heredocs: HeredocList = .{},
 
 error_message: ?[]const u8 = null,
 
-const HeredocList = std.SinglyLinkedList(Token.DelimiterState);
+pub const Heredoc = struct {
+    delimiter_state: Token.DelimiterState,
+    node: *StringInterpolation,
+};
 
 fn new(string: []const u8) Lexer {
+    const allocator = std.heap.page_allocator; // TODO
+    return init(allocator, string);
+}
+
+pub fn init(allocator: Allocator, string: []const u8) Lexer {
     return .{
-        .allocator = std.heap.page_allocator, // TODO
+        .allocator = allocator,
         .string = string,
+        .heredocs = ArrayList(Heredoc).init(allocator),
     };
 }
 
 pub fn nextToken(lexer: *Lexer) !Token {
+    const token = try lexer._nextToken();
+
+    if (token.type == .newline and
+        !lexer.consuming_heredocs and
+        lexer.heredocs.items.len > 0)
+    {
+        try lexer.consumeHeredocs();
+    }
+
+    return token;
+}
+
+pub fn consumeHeredocs(lexer: *Lexer) !void {
+    lexer.consuming_heredocs = true;
+    std.mem.reverse(Heredoc, lexer.heredocs.items);
+    while (lexer.heredocs.items.len > 0) {
+        const heredoc = lexer.heredocs.pop();
+        try lexer.consumeHeredoc(heredoc);
+    }
+    lexer.consuming_heredocs = false;
+}
+
+const StringPiece = struct {
+    value: union(enum) {
+        string: []const u8,
+        node: ast.Node,
+    },
+    line_number: usize,
+};
+
+pub fn consumeHeredoc(lexer: *Lexer, heredoc: Heredoc) !void {
+    _ = lexer;
+    _ = heredoc;
+    return error.Unimplemented;
+    // const node = heredoc.node;
+    // var delimiter_state = heredoc.delimiter_state;
+    // // nextStringToken(delimiter_state);
+    // // delimiter_state = lexer.token.delimiter_state;
+
+    // var pieces = ArrayList(StringPiece).init(lexer.allocator);
+    // var has_interpolation = false;
+
+    // // consumeDelimiter(pieces, delimiter_state, has_interpolation);
+
+    // if (has_interpolation) {
+    //     // combineInterpolationPieces(pieces, delimiter_state, &node.expressions);
+    // } else {
+    //     // const string = combinePieces(pieces, delimiter_state);
+    //     // const exp = StringLiteral.new(lexer.allocator, string);
+    //     // exp.setLocation(node.location);
+    //     // exp.setEndLocation(token_end_location);
+    //     // node.expressions.append(exp);
+    // }
+    // _ = pieces;
+    // _ = node;
+    // _ = delimiter_state;
+}
+
+pub fn _nextToken(lexer: *Lexer) !Token {
     // Check previous token:
     if (lexer.token.type == .newline or lexer.token.type == .eof) {
         // 1) After a newline or at the start of the stream (:EOF), a following
@@ -134,7 +207,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                 lexer.skipChar();
                 lexer.token.type = .newline;
                 lexer.incrLineNumber();
-                // reset_regex_flags = false; // TODO: missing in Crystal implementation?
+                reset_regex_flags = false;
                 try lexer.consumeNewlines();
             } else {
                 try lexer.raise("expected '\\n' after '\\r'");
@@ -303,15 +376,19 @@ pub fn nextToken(lexer: *Lexer) !Token {
             } else if (lexer.wants_def_or_macro_name) {
                 lexer.token.type = .op_slash;
             } else if (lexer.slash_is_regex) {
-                lexer.token.type = .delimiter_start;
-                lexer.token.delimiter_state = Token.DelimiterState.new(.regex, '/', '/');
-                lexer.setTokenRawFromStart(start);
+                lexer.delimiterStartNoAdvance(.{
+                    .kind = .regex,
+                    .nest = .{ .char = '/' },
+                    .end = .{ .char = '/' },
+                }, start);
             } else if (std.ascii.isWhitespace(char) or char == 0) {
                 lexer.token.type = .op_slash;
             } else if (lexer.wants_regex) {
-                lexer.token.type = .delimiter_start;
-                lexer.token.delimiter_state = Token.DelimiterState.new(.regex, '/', '/');
-                lexer.setTokenRawFromStart(start);
+                lexer.delimiterStartNoAdvance(.{
+                    .kind = .regex,
+                    .nest = .{ .char = '/' },
+                    .end = .{ .char = '/' },
+                }, start);
             } else {
                 lexer.token.type = .op_slash;
             }
@@ -610,20 +687,23 @@ pub fn nextToken(lexer: *Lexer) !Token {
             try lexer.consumeCharLiteral();
         },
         '`' => {
-            lexer.skipChar();
             if (lexer.wants_def_or_macro_name) {
+                lexer.skipChar();
                 lexer.token.type = .op_grave;
             } else {
-                lexer.token.type = .delimiter_start;
-                lexer.token.delimiter_state = Token.DelimiterState.new(.command, '`', '`');
-                lexer.setTokenRawFromStart(start);
+                lexer.delimiterStart(.{
+                    .kind = .command,
+                    .nest = .{ .char = '`' },
+                    .end = .{ .char = '`' },
+                }, start);
             }
         },
         '"' => {
-            lexer.skipChar();
-            lexer.token.type = .delimiter_start;
-            lexer.token.delimiter_state = Token.DelimiterState.new(.string, '"', '"');
-            lexer.setTokenRawFromStart(start);
+            lexer.delimiterStart(.{
+                .kind = .string,
+                .nest = .{ .char = '"' },
+                .end = .{ .char = '"' },
+            }, start);
         },
         '0'...'9' => {
             try lexer.scanNumber(start, false);
@@ -667,12 +747,12 @@ pub fn nextToken(lexer: *Lexer) !Token {
         'a' => {
             switch (lexer.nextChar()) {
                 'b' => {
-                    if (lexer.nextChars("stract")) {
+                    if (lexer.charSequence("stract")) {
                         return lexer.checkIdentOrKeyword(.abstract, start);
                     }
                 },
                 'l' => {
-                    if (lexer.nextChars("ias")) {
+                    if (lexer.charSequence("ias")) {
                         return lexer.checkIdentOrKeyword(.alias, start);
                     }
                 },
@@ -696,7 +776,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     }
                 },
                 'n' => {
-                    if (lexer.nextChars("notation")) {
+                    if (lexer.charSequence("notation")) {
                         return lexer.checkIdentOrKeyword(.annotation, start);
                     }
                 },
@@ -709,12 +789,12 @@ pub fn nextToken(lexer: *Lexer) !Token {
         'b' => {
             switch (lexer.nextChar()) {
                 'e' => {
-                    if (lexer.nextChars("gin")) {
+                    if (lexer.charSequence("gin")) {
                         return lexer.checkIdentOrKeyword(.begin, start);
                     }
                 },
                 'r' => {
-                    if (lexer.nextChars("eak")) {
+                    if (lexer.charSequence("eak")) {
                         return lexer.checkIdentOrKeyword(.@"break", start);
                     }
                 },
@@ -727,12 +807,12 @@ pub fn nextToken(lexer: *Lexer) !Token {
         'c' => {
             switch (lexer.nextChar()) {
                 'a' => {
-                    if (lexer.nextChars("se")) {
+                    if (lexer.charSequence("se")) {
                         return lexer.checkIdentOrKeyword(.case, start);
                     }
                 },
                 'l' => {
-                    if (lexer.nextChars("ass")) {
+                    if (lexer.charSequence("ass")) {
                         return lexer.checkIdentOrKeyword(.class, start);
                     }
                 },
@@ -784,7 +864,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                             return lexer.checkIdentOrKeyword(.end, start);
                         },
                         's' => {
-                            if (lexer.nextChars("ure")) {
+                            if (lexer.charSequence("ure")) {
                                 return lexer.checkIdentOrKeyword(.ensure, start);
                             }
                         },
@@ -799,7 +879,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     }
                 },
                 'x' => {
-                    if (lexer.nextChars("tend")) {
+                    if (lexer.charSequence("tend")) {
                         return lexer.checkIdentOrKeyword(.extend, start);
                     }
                 },
@@ -812,7 +892,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
         'f' => {
             switch (lexer.nextChar()) {
                 'a' => {
-                    if (lexer.nextChars("lse")) {
+                    if (lexer.charSequence("lse")) {
                         return lexer.checkIdentOrKeyword(.false, start);
                     }
                 },
@@ -841,12 +921,12 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     if (isIdentPartOrEnd(lexer.peekNextChar())) {
                         switch (lexer.nextChar()) {
                             'c' => {
-                                if (lexer.nextChars("lude")) {
+                                if (lexer.charSequence("lude")) {
                                     return lexer.checkIdentOrKeyword(.include, start);
                                 }
                             },
                             's' => {
-                                if (lexer.nextChars("tance_sizeof")) {
+                                if (lexer.charSequence("tance_sizeof")) {
                                     return lexer.checkIdentOrKeyword(.instance_sizeof, start);
                                 }
                             },
@@ -862,7 +942,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     }
                 },
                 's' => {
-                    if (lexer.nextChars("_a?")) {
+                    if (lexer.charSequence("_a?")) {
                         return lexer.checkIdentOrKeyword(.is_a_question, start);
                     }
                 },
@@ -888,14 +968,14 @@ pub fn nextToken(lexer: *Lexer) !Token {
         'm' => {
             switch (lexer.nextChar()) {
                 'a' => {
-                    if (lexer.nextChars("cro")) {
+                    if (lexer.charSequence("cro")) {
                         return lexer.checkIdentOrKeyword(.macro, start);
                     }
                 },
                 'o' => {
                     switch (lexer.nextChar()) {
                         'd' => {
-                            if (lexer.nextChars("ule")) {
+                            if (lexer.charSequence("ule")) {
                                 return lexer.checkIdentOrKeyword(.module, start);
                             }
                         },
@@ -913,7 +993,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
         'n' => {
             switch (lexer.nextChar()) {
                 'e' => {
-                    if (lexer.nextChars("xt")) {
+                    if (lexer.charSequence("xt")) {
                         return lexer.checkIdentOrKeyword(.next, start);
                     }
                 },
@@ -943,7 +1023,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                 'f' => {
                     if (lexer.peekNextChar() == 'f') {
                         lexer.skipChar();
-                        if (lexer.nextChars("setof")) {
+                        if (lexer.charSequence("setof")) {
                             return lexer.checkIdentOrKeyword(.offsetof, start);
                         }
                     } else {
@@ -964,19 +1044,19 @@ pub fn nextToken(lexer: *Lexer) !Token {
         'p' => {
             switch (lexer.nextChar()) {
                 'o' => {
-                    if (lexer.nextChars("interof")) {
+                    if (lexer.charSequence("interof")) {
                         return lexer.checkIdentOrKeyword(.pointerof, start);
                     }
                 },
                 'r' => {
                     switch (lexer.nextChar()) {
                         'i' => {
-                            if (lexer.nextChars("vate")) {
+                            if (lexer.charSequence("vate")) {
                                 return lexer.checkIdentOrKeyword(.private, start);
                             }
                         },
                         'o' => {
-                            if (lexer.nextChars("tected")) {
+                            if (lexer.charSequence("tected")) {
                                 return lexer.checkIdentOrKeyword(.protected, start);
                             }
                         },
@@ -998,12 +1078,12 @@ pub fn nextToken(lexer: *Lexer) !Token {
                         's' => {
                             switch (lexer.nextChar()) {
                                 'c' => {
-                                    if (lexer.nextChars("ue")) {
+                                    if (lexer.charSequence("ue")) {
                                         return lexer.checkIdentOrKeyword(.rescue, start);
                                     }
                                 },
                                 'p' => {
-                                    if (lexer.nextChars("onds_to?")) {
+                                    if (lexer.charSequence("onds_to?")) {
                                         return lexer.checkIdentOrKeyword(.responds_to_question, start);
                                     }
                                 },
@@ -1013,12 +1093,12 @@ pub fn nextToken(lexer: *Lexer) !Token {
                             }
                         },
                         't' => {
-                            if (lexer.nextChars("urn")) {
+                            if (lexer.charSequence("urn")) {
                                 return lexer.checkIdentOrKeyword(.@"return", start);
                             }
                         },
                         'q' => {
-                            if (lexer.nextChars("uire")) {
+                            if (lexer.charSequence("uire")) {
                                 return lexer.checkIdentOrKeyword(.require, start);
                             }
                         },
@@ -1039,7 +1119,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     if (lexer.nextChar() == 'l') {
                         switch (lexer.nextChar()) {
                             'e' => {
-                                if (lexer.nextChars("ct")) {
+                                if (lexer.charSequence("ct")) {
                                     return lexer.checkIdentOrKeyword(.select, start);
                                 }
                             },
@@ -1053,17 +1133,17 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     }
                 },
                 'i' => {
-                    if (lexer.nextChars("zeof")) {
+                    if (lexer.charSequence("zeof")) {
                         return lexer.checkIdentOrKeyword(.sizeof, start);
                     }
                 },
                 't' => {
-                    if (lexer.nextChars("ruct")) {
+                    if (lexer.charSequence("ruct")) {
                         return lexer.checkIdentOrKeyword(.@"struct", start);
                     }
                 },
                 'u' => {
-                    if (lexer.nextChars("per")) {
+                    if (lexer.charSequence("per")) {
                         return lexer.checkIdentOrKeyword(.super, start);
                     }
                 },
@@ -1076,17 +1156,17 @@ pub fn nextToken(lexer: *Lexer) !Token {
         't' => {
             switch (lexer.nextChar()) {
                 'h' => {
-                    if (lexer.nextChars("en")) {
+                    if (lexer.charSequence("en")) {
                         return lexer.checkIdentOrKeyword(.then, start);
                     }
                 },
                 'r' => {
-                    if (lexer.nextChars("ue")) {
+                    if (lexer.charSequence("ue")) {
                         return lexer.checkIdentOrKeyword(.true, start);
                     }
                 },
                 'y' => {
-                    if (lexer.nextChars("pe")) {
+                    if (lexer.charSequence("pe")) {
                         if (lexer.peekNextChar() == 'o') {
                             lexer.skipChar();
                             if (lexer.nextChar() == 'f') {
@@ -1114,7 +1194,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                                 }
                             },
                             'n' => {
-                                if (lexer.nextChars("itialized")) {
+                                if (lexer.charSequence("itialized")) {
                                     return lexer.checkIdentOrKeyword(.uninitialized, start);
                                 }
                             },
@@ -1124,12 +1204,12 @@ pub fn nextToken(lexer: *Lexer) !Token {
                         }
                     },
                     'l' => {
-                        if (lexer.nextChars("ess")) {
+                        if (lexer.charSequence("ess")) {
                             return lexer.checkIdentOrKeyword(.unless, start);
                         }
                     },
                     't' => {
-                        if (lexer.nextChars("il")) {
+                        if (lexer.charSequence("il")) {
                             return lexer.checkIdentOrKeyword(.until, start);
                         }
                     },
@@ -1141,7 +1221,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
             _ = lexer.scanIdent(start);
         },
         'v' => {
-            if (lexer.nextChars("erbatim")) {
+            if (lexer.charSequence("erbatim")) {
                 return lexer.checkIdentOrKeyword(.verbatim, start);
             }
             _ = lexer.scanIdent(start);
@@ -1156,7 +1236,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                             }
                         },
                         'i' => {
-                            if (lexer.nextChars("le")) {
+                            if (lexer.charSequence("le")) {
                                 return lexer.checkIdentOrKeyword(.@"while", start);
                             }
                         },
@@ -1166,7 +1246,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     }
                 },
                 'i' => {
-                    if (lexer.nextChars("th")) {
+                    if (lexer.charSequence("th")) {
                         return lexer.checkIdentOrKeyword(.with, start);
                     }
                 },
@@ -1177,7 +1257,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
             _ = lexer.scanIdent(start);
         },
         'y' => {
-            if (lexer.nextChars("ield")) {
+            if (lexer.charSequence("ield")) {
                 return lexer.checkIdentOrKeyword(.yield, start);
             }
             _ = lexer.scanIdent(start);
@@ -1188,7 +1268,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                     // TODO: Crystal implementation calls scan_ident twice
                     switch (lexer.nextChar()) {
                         'D' => {
-                            if (lexer.nextChars("IR__")) {
+                            if (lexer.charSequence("IR__")) {
                                 if (!isIdentPartOrEnd(lexer.peekNextChar())) {
                                     lexer.skipChar();
                                     lexer.token.type = .magic_dir;
@@ -1197,7 +1277,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                             }
                         },
                         'E' => {
-                            if (lexer.nextChars("ND_LINE__")) {
+                            if (lexer.charSequence("ND_LINE__")) {
                                 if (!isIdentPartOrEnd(lexer.peekNextChar())) {
                                     lexer.skipChar();
                                     lexer.token.type = .magic_end_line;
@@ -1206,7 +1286,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                             }
                         },
                         'F' => {
-                            if (lexer.nextChars("ILE__")) {
+                            if (lexer.charSequence("ILE__")) {
                                 if (!isIdentPartOrEnd(lexer.peekNextChar())) {
                                     lexer.skipChar();
                                     lexer.token.type = .magic_file;
@@ -1215,7 +1295,7 @@ pub fn nextToken(lexer: *Lexer) !Token {
                             }
                         },
                         'L' => {
-                            if (lexer.nextChars("INE__")) {
+                            if (lexer.charSequence("INE__")) {
                                 if (!isIdentPartOrEnd(lexer.peekNextChar())) {
                                     lexer.skipChar();
                                     lexer.token.type = .magic_line;
@@ -1271,14 +1351,14 @@ pub fn tokenEndLocation(lexer: *Lexer) Location {
     return loc;
 }
 
-fn consumeComment(lexer: *Lexer, start_pos: usize) Token {
+pub fn consumeComment(lexer: *Lexer, start_pos: usize) Token {
     lexer.skipComment();
     lexer.token.type = .comment;
     lexer.token.value = .{ .string = lexer.stringRange(start_pos) };
     return lexer.token;
 }
 
-fn consumeDoc(lexer: *Lexer) !void {
+pub fn consumeDoc(lexer: *Lexer) !void {
     var char = lexer.currentChar();
     var start_pos = lexer.current_pos;
 
@@ -1300,14 +1380,14 @@ fn consumeDoc(lexer: *Lexer) !void {
     }
 }
 
-fn skipComment(lexer: *Lexer) void {
+pub fn skipComment(lexer: *Lexer) void {
     var char = lexer.currentChar();
     while (char != '\n' and char != 0) {
         char = lexer.nextCharNoColumnIncrement();
     }
 }
 
-fn consumeWhitespace(lexer: *Lexer) !void {
+pub fn consumeWhitespace(lexer: *Lexer) !void {
     const start_pos = lexer.current_pos;
     lexer.token.type = .space;
     lexer.skipChar();
@@ -1339,10 +1419,10 @@ fn consumeWhitespace(lexer: *Lexer) !void {
     }
 }
 
-fn consumeNewlines(lexer: *Lexer) !void {
+pub fn consumeNewlines(lexer: *Lexer) !void {
     // If there are heredocs we don't freely consume newlines because
     // these will be part of the heredoc string
-    if (lexer.heredocs.first) |_| {
+    if (lexer.heredocs.items.len > 0) {
         return;
     }
 
@@ -1372,7 +1452,7 @@ fn consumeNewlines(lexer: *Lexer) !void {
     }
 }
 
-fn checkIdentOrKeyword(lexer: *Lexer, keyword: Keyword, start: usize) Token {
+pub fn checkIdentOrKeyword(lexer: *Lexer, keyword: Keyword, start: usize) Token {
     if (isIdentPartOrEnd(lexer.peekNextChar())) {
         _ = lexer.scanIdent(start);
     } else {
@@ -1383,7 +1463,7 @@ fn checkIdentOrKeyword(lexer: *Lexer, keyword: Keyword, start: usize) Token {
     return lexer.token;
 }
 
-fn scanIdent(lexer: *Lexer, start: usize) Token {
+pub fn scanIdent(lexer: *Lexer, start: usize) Token {
     while (isIdentPart(lexer.currentChar())) {
         lexer.skipChar();
     }
@@ -1400,12 +1480,12 @@ fn scanIdent(lexer: *Lexer, start: usize) Token {
     return lexer.token;
 }
 
-fn skipSymbolChar(lexer: *Lexer, value: []const u8, start: usize) void {
+pub fn skipSymbolChar(lexer: *Lexer, value: []const u8, start: usize) void {
     lexer.skipChar();
     lexer.symbol(value, start);
 }
 
-fn symbol(lexer: *Lexer, value: []const u8, start: usize) void {
+pub fn symbol(lexer: *Lexer, value: []const u8, start: usize) void {
     lexer.token.type = .symbol;
     lexer.token.value = .{ .string = value };
     lexer.setTokenRawFromStart(start);
@@ -1416,7 +1496,13 @@ fn symbol(lexer: *Lexer, value: []const u8, start: usize) void {
 // warnLargeUint64Literal
 
 fn scanNumber(lexer: *Lexer, start: usize, negative: bool) !void {
-    try lexer.unknownToken(); _ = start; _ = negative; // TODO
+    // TODO
+    lexer.token.type = .number;
+    while (std.ascii.isDigit(lexer.nextChar())) {}
+    lexer.setTokenRawFromStart(start);
+    lexer.token.value = .{ .string = lexer.stringRange(start) };
+    lexer.token.number_kind = .i32;
+    _ = negative;
 }
 
 // fn consumeNumberSuffix
@@ -1431,7 +1517,7 @@ fn scanNumber(lexer: *Lexer, start: usize, negative: bool) !void {
 // checkMacroOpeningKeyword
 // checkHeredocStart
 
-fn consumeOctalEscape(lexer: *Lexer, first_char: u8) !u8 {
+pub fn consumeOctalEscape(lexer: *Lexer, first_char: u8) !u8 {
     var value = first_char - '0';
     var count: usize = 1;
     while (count <= 3) : (count += 1) {
@@ -1450,7 +1536,7 @@ fn consumeOctalEscape(lexer: *Lexer, first_char: u8) !u8 {
     return value;
 }
 
-fn consumeCharUnicodeEscape(lexer: *Lexer) !u21 {
+pub fn consumeCharUnicodeEscape(lexer: *Lexer) !u21 {
     if (lexer.peekNextChar() == '{') {
         lexer.skipChar();
         return try lexer.consumeBracedUnicodeEscape(false);
@@ -1459,7 +1545,7 @@ fn consumeCharUnicodeEscape(lexer: *Lexer) !u21 {
     }
 }
 
-fn consumeStringHexEscape(lexer: *Lexer) !u8 {
+pub fn consumeStringHexEscape(lexer: *Lexer) !u8 {
     const high = std.fmt.parseInt(u4, &[1]u8{lexer.nextChar()}, 16) catch {
         try lexer.raise("invalid hex escape");
         unreachable;
@@ -1473,7 +1559,7 @@ fn consumeStringHexEscape(lexer: *Lexer) !u8 {
     return (@intCast(u8, high) << 4) | low;
 }
 
-fn consumeStringUnicodeEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void {
+pub fn consumeStringUnicodeEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void {
     if (lexer.peekNextChar() == '{') {
         lexer.skipChar();
         try lexer.consumeStringUnicodeBraceEscape(buffer);
@@ -1485,7 +1571,7 @@ fn consumeStringUnicodeEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void {
     }
 }
 
-fn consumeStringUnicodeBraceEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void {
+pub fn consumeStringUnicodeBraceEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void {
     while (true) {
         const codepoint = try lexer.consumeBracedUnicodeEscape(true);
         var encoded: [4]u8 = undefined;
@@ -1495,7 +1581,7 @@ fn consumeStringUnicodeBraceEscape(lexer: *Lexer, buffer: *ArrayList(u8)) !void 
     }
 }
 
-fn consumeNonBracedUnicodeEscape(lexer: *Lexer) !u16 {
+pub fn consumeNonBracedUnicodeEscape(lexer: *Lexer) !u16 {
     var codepoint: u16 = 0;
     var count: usize = 0;
     while (count < 4) : (count += 1) {
@@ -1511,7 +1597,7 @@ fn consumeNonBracedUnicodeEscape(lexer: *Lexer) !u16 {
     return codepoint;
 }
 
-fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
+pub fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
     var codepoint: u21 = 0;
     var found_curly = false;
     var found_space = false;
@@ -1570,24 +1656,24 @@ fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
     return codepoint;
 }
 
-fn expectedHexadecimalCharacterInUnicodeEscape(lexer: *Lexer) !void {
+pub fn expectedHexadecimalCharacterInUnicodeEscape(lexer: *Lexer) !void {
     try lexer.raise("expected hexadecimal character in unicode escape");
 }
 
 // stringTokenEscapeValue
 
-fn delimiterStart(lexer: *Lexer, state: Token.DelimiterState, start: usize) void {
-    lexer.delimiterStart2(state, start, true);
+pub fn delimiterStart(lexer: *Lexer, state: Token.DelimiterState, start: usize) void {
+    lexer.skipChar();
+    lexer.delimiterStartNoAdvance(state, start);
 }
 
-fn delimiterStart2(lexer: *Lexer, state: Token.DelimiterState, start: usize, advance: bool) void {
-    if (advance) lexer.skipChar();
+pub fn delimiterStartNoAdvance(lexer: *Lexer, state: Token.DelimiterState, start: usize) void {
     lexer.token.type = .delimiter_start;
     lexer.token.delimiter_state = state;
     lexer.setTokenRawFromStart(start);
 }
 
-// nextStringArrayToken
+pub const nextStringArrayToken = StringLexer.nextStringArrayToken;
 
 // fn charToHex(char: u8) ?u8 {
 //     return switch (char) {
@@ -1598,7 +1684,7 @@ fn delimiterStart2(lexer: *Lexer, state: Token.DelimiterState, start: usize, adv
 //     };
 // }
 
-fn charToHex(char: u8) ?u4 {
+pub fn charToHex(char: u8) ?u4 {
     return switch (char) {
         '0' => 0, '1' => 1, '2' => 2, '3' => 3, '4' => 4,
         '5' => 5, '6' => 6, '7' => 7, '8' => 8, '9' => 9,
@@ -1608,7 +1694,7 @@ fn charToHex(char: u8) ?u4 {
     };
 }
 
-fn consumeLocPragma(lexer: *Lexer) !void {
+pub fn consumeLocPragma(lexer: *Lexer) !void {
     switch (lexer.currentChar()) {
         '"' => {
             // skip '"'
@@ -1780,12 +1866,12 @@ fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
 
     const here = lexer.stringRange2(start_here, end_here);
 
-    lexer.delimiterStart2(.{
+    lexer.delimiterStartNoAdvance(.{
         .kind = .heredoc,
         .nest = .{ .string = here },
         .end = .{ .string = here },
         .allow_escapes = !has_single_quote,
-    }, start, false);
+    }, start);
 }
 
 fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
@@ -1954,16 +2040,17 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
 fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
     const line = lexer.line_number;
     const column = lexer.column_number;
-    var buffer: ArrayList(u8) = undefined;
-    var found_escape = false;
+    var buffer = ArrayList(u8).init(lexer.allocator);
+    // var buffer: ArrayList(u8) = undefined;
+    // var found_escape = false;
     while (true) {
         switch (lexer.nextChar()) {
             '\\' => {
-                if (!found_escape) {
-                    found_escape = true;
-                    buffer = ArrayList(u8).init(lexer.allocator);
-                    try buffer.appendSlice(lexer.stringRange(start + 2));
-                }
+                // if (!found_escape) {
+                //     found_escape = true;
+                //     buffer = ArrayList(u8).init(lexer.allocator);
+                //     try buffer.appendSlice(lexer.stringRange(start + 2));
+                // }
                 switch (lexer.nextChar()) {
                     'a' => {
                         try buffer.append(std.ascii.control_code.bel); // '\a'
@@ -2017,19 +2104,21 @@ fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
                 try lexer.raiseAt("unterminated quoted symbol", line, column);
             },
             else => |char| {
-                if (found_escape) {
-                    try buffer.append(char);
-                }
+                try buffer.append(char);
+                // if (found_escape) {
+                //     try buffer.append(char);
+                // }
             }
         }
     }
 
     lexer.token.type = .symbol;
-    if (found_escape) {
-        lexer.token.value = .{ .buffer = buffer };
-    } else {
-        lexer.token.value = .{ .string = lexer.stringRange(start + 2) };
-    }
+    lexer.token.value = .{ .buffer = buffer };
+    // if (found_escape) {
+    //     lexer.token.value = .{ .buffer = buffer };
+    // } else {
+    //     lexer.token.value = .{ .string = lexer.stringRange(start + 2) };
+    // }
     lexer.skipChar();
     lexer.setTokenRawFromStart(start);
 }
@@ -2135,7 +2224,7 @@ fn consumeGlobalMatchDataIndex(lexer: *Lexer) void {
     lexer.token.value = .{ .string = lexer.stringRange(start) };
 }
 
-fn setLocation(lexer: *Lexer, filename: []const u8, line_number: usize, column_number: usize) void {
+pub fn setLocation(lexer: *Lexer, filename: []const u8, line_number: usize, column_number: usize) void {
     lexer.filename = filename;
     lexer.token.filename = filename;
 
@@ -2146,7 +2235,7 @@ fn setLocation(lexer: *Lexer, filename: []const u8, line_number: usize, column_n
     lexer.token.column_number = column_number;
 }
 
-fn popLocation(lexer: *Lexer) void {
+pub fn popLocation(lexer: *Lexer) void {
     if (lexer.stacked) {
         lexer.stacked = false;
 
@@ -2161,7 +2250,7 @@ fn popLocation(lexer: *Lexer) void {
     }
 }
 
-fn pushLocation(lexer: *Lexer) void {
+pub fn pushLocation(lexer: *Lexer) void {
     if (!lexer.stacked) {
         lexer.stacked = true;
         lexer.stacked_filename = lexer.filename;
@@ -2170,22 +2259,22 @@ fn pushLocation(lexer: *Lexer) void {
     }
 }
 
-fn incrColumnNumber(lexer: *Lexer) void {
+pub fn incrColumnNumber(lexer: *Lexer) void {
     lexer.incrColumnNumberBy(1);
 }
 
-fn incrColumnNumberBy(lexer: *Lexer, d: usize) void {
+pub fn incrColumnNumberBy(lexer: *Lexer, d: usize) void {
     lexer.column_number += d;
     if (lexer.stacked) {
         lexer.stacked_column_number += d;
     }
 }
 
-fn incrLineNumber(lexer: *Lexer) void {
+pub fn incrLineNumber(lexer: *Lexer) void {
     lexer.incrLineNumberWithColumn(1);
 }
 
-fn incrLineNumberWithColumn(lexer: *Lexer, column_number: ?usize) void {
+pub fn incrLineNumberWithColumn(lexer: *Lexer, column_number: ?usize) void {
     lexer.line_number += 1;
     if (column_number) |c| lexer.column_number = c;
     if (lexer.stacked) {
@@ -2213,18 +2302,7 @@ pub inline fn nextChar(lexer: *Lexer) u8 {
     return lexer.currentChar();
 }
 
-pub inline fn nextChars(lexer: *Lexer, comptime chars: []const u8) bool {
-    comptime var i = 0;
-    inline while (i < chars.len) : (i += 1) {
-        @setEvalBranchQuota(2000);
-        if (lexer.nextChar() != chars[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn nextCharCheckLine(lexer: *Lexer) u8 {
+pub fn nextCharCheckLine(lexer: *Lexer) u8 {
     const char = lexer.nextCharNoColumnIncrement();
     if (char == '\n') {
         lexer.incrLineNumber();
@@ -2234,12 +2312,12 @@ fn nextCharCheckLine(lexer: *Lexer) u8 {
     return char;
 }
 
-inline fn skipTokenChar(lexer: *Lexer, token_type: Token.Kind) void {
+pub inline fn skipTokenChar(lexer: *Lexer, token_type: Token.Kind) void {
     lexer.skipChar();
     lexer.token.type = token_type;
 }
 
-fn resetToken(lexer: *Lexer) void {
+pub fn resetToken(lexer: *Lexer) void {
     lexer.token.value = .nil;
     lexer.token.line_number = lexer.line_number;
     lexer.token.column_number = lexer.column_number;
@@ -2266,7 +2344,12 @@ pub fn skipTokenAndStatementEnd(lexer: *Lexer) !void {
     try lexer.skipStatementEnd();
 }
 
-// nextTokenNeverASymbol
+pub fn nextTokenNeverASymbol(lexer: *Lexer) !Token {
+    lexer.wants_symbol = false;
+    const token = try lexer.nextToken();
+    lexer.wants_symbol = true;
+    return token;
+}
 
 pub fn currentChar(lexer: Lexer) u8 {
     if (lexer.current_pos < lexer.string.len) {
@@ -2276,7 +2359,7 @@ pub fn currentChar(lexer: Lexer) u8 {
     }
 }
 
-fn peekNextChar(lexer: Lexer) u8 {
+pub fn peekNextChar(lexer: Lexer) u8 {
     if (lexer.current_pos + 1 < lexer.string.len) {
         return lexer.string[lexer.current_pos + 1];
     } else {
@@ -2284,11 +2367,11 @@ fn peekNextChar(lexer: Lexer) u8 {
     }
 }
 
-fn stringRange(lexer: Lexer, start_pos: usize) []const u8 {
+pub fn stringRange(lexer: Lexer, start_pos: usize) []const u8 {
     return lexer.stringRange2(start_pos, lexer.current_pos);
 }
 
-fn stringRange2(lexer: Lexer, start_pos: usize, end_pos: usize) []const u8 {
+pub fn stringRange2(lexer: Lexer, start_pos: usize, end_pos: usize) []const u8 {
     return lexer.string[start_pos..end_pos];
 }
 
@@ -2297,15 +2380,15 @@ fn stringRange2(lexer: Lexer, start_pos: usize, end_pos: usize) []const u8 {
 // sliceRange
 // sliceRange2
 
-fn isIdentStart(char: u8) bool {
+pub fn isIdentStart(char: u8) bool {
     return std.ascii.isAlphabetic(char) or char == '_' or char > 0x9F;
 }
 
-fn isIdentPart(char: u8) bool {
+pub fn isIdentPart(char: u8) bool {
     return isIdentStart(char) or std.ascii.isDigit(char);
 }
 
-fn isIdent(name: []const u8) bool {
+pub fn isIdent(name: []const u8) bool {
     return name.len > 0 and isIdentStart(name[0]);
 }
 
@@ -2313,11 +2396,11 @@ pub fn isSetter(name: []const u8) bool {
     return isIdent(name) and name[name.len - 1] == '=';
 }
 
-fn isIdentPartOrEnd(char: u8) bool {
+pub fn isIdentPartOrEnd(char: u8) bool {
     return isIdentPart(char) or char == '?' or char == '!';
 }
 
-fn peekNotIdentPartOrEndNextChar(lexer: *Lexer) bool {
+pub fn peekNotIdentPartOrEndNextChar(lexer: *Lexer) bool {
     const next_char = lexer.peekNextChar();
     if (isIdentPartOrEnd(next_char) or next_char == ':') {
         return false;
@@ -2326,7 +2409,7 @@ fn peekNotIdentPartOrEndNextChar(lexer: *Lexer) bool {
     return true;
 }
 
-fn closingChar(char: u8) u8 {
+pub fn closingChar(char: u8) u8 {
     return switch (char) {
         '<' => '>',
         '(' => ')',
@@ -2364,7 +2447,7 @@ pub fn skipStatementEnd(lexer: *Lexer) !void {
     }
 }
 
-fn handleCrlfOrLf(lexer: *Lexer) !bool {
+pub fn handleCrlfOrLf(lexer: *Lexer) !bool {
     const isCarriageReturn = lexer.currentChar() == '\r';
     if (isCarriageReturn) {
         if (lexer.nextChar() != '\n') {
@@ -2374,7 +2457,18 @@ fn handleCrlfOrLf(lexer: *Lexer) !bool {
     return isCarriageReturn;
 }
 
-fn unknownToken(lexer: *Lexer) !void {
+inline fn charSequence(lexer: *Lexer, comptime chars: []const u8) bool {
+    comptime var i = 0;
+    inline while (i < chars.len) : (i += 1) {
+        @setEvalBranchQuota(2000);
+        if (lexer.nextChar() != chars[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+pub fn unknownToken(lexer: *Lexer) !void {
     switch (lexer.currentChar()) {
         '\n' => try lexer.raise("unknown token: '\\n'"),
         else => |c| {
@@ -2388,7 +2482,7 @@ fn unknownToken(lexer: *Lexer) !void {
     }
 }
 
-fn setTokenRawFromStart(lexer: *Lexer, start: usize) void {
+pub fn setTokenRawFromStart(lexer: *Lexer, start: usize) void {
     if (lexer.wants_raw) {
         lexer.token.raw = lexer.stringRange(start);
     }
@@ -2439,8 +2533,92 @@ pub fn raiseLoc(
     // TODO: location.filename
 }
 
+const StringLexer = struct {
+    fn nextStringArrayToken(lexer: *Lexer) !Token {
+        lexer.resetToken();
+
+        while (true) {
+            const char = lexer.currentChar();
+            if (char == '\n') {
+                lexer.skipChar();
+                lexer.incrLineNumberWithColumn(1); // TODO: same as incrLineNumber
+            } else if (std.ascii.isWhitespace(char)) {
+                lexer.skipChar();
+            } else {
+                break;
+            }
+        }
+
+        const delimiter_end = lexer.token.delimiter_state.end.charOrNull();
+        const delimiter_nest = lexer.token.delimiter_state.nest.charOrNull();
+
+        if (lexer.currentChar() == delimiter_end) {
+            const start = lexer.current_pos;
+            lexer.skipChar();
+            lexer.setTokenRawFromStart(start);
+            lexer.token.type = .string_array_end;
+            return lexer.token;
+        }
+
+        const start = lexer.current_pos;
+        var sub_start = start;
+        var value = ArrayList(u8).init(lexer.allocator);
+
+        var escaped = false;
+        while (true) {
+            const char = lexer.currentChar();
+            if (char == 0) {
+                break; // raise is handled by parser
+            } else if (char == delimiter_end) {
+                if (!escaped) {
+                    if (lexer.token.delimiter_state.open_count == 0) {
+                        break;
+                    } else {
+                        lexer.token.delimiter_state.open_count -= 1;
+                    }
+                }
+            } else if (char == delimiter_nest) {
+                if (!escaped) {
+                    lexer.token.delimiter_state.open_count += 1;
+                }
+            } else if (std.ascii.isWhitespace(char)) {
+                if (!escaped) break;
+            } else if (escaped) {
+                try value.append('\\');
+            }
+
+            escaped = lexer.currentChar() == '\\';
+            if (escaped) {
+                try value.appendSlice(lexer.stringRange2(sub_start, lexer.current_pos));
+                sub_start = lexer.current_pos + 1;
+            }
+
+            lexer.skipChar();
+        }
+
+        if (start == lexer.current_pos) {
+            lexer.token.type = .eof;
+            return lexer.token;
+        }
+
+        try value.appendSlice(lexer.stringRange2(sub_start, lexer.current_pos));
+
+        lexer.token.type = .string;
+        lexer.token.value = .{ .buffer = value };
+        lexer.setTokenRawFromStart(start);
+
+        return lexer.token;
+    }
+};
+
 pub fn main() !void {
-    const p = @import("std").debug.print;
+    // const p = @import("std").debug.print;
+    const p = struct {
+        fn f(fmt: []const u8, args: anytype) void {
+            _ = fmt;
+            _ = args;
+        }
+    }.f;
     const assert = @import("std").debug.assert;
     const escape = std.fmt.fmtSliceEscapeUpper;
 
@@ -2564,6 +2742,9 @@ pub fn main() !void {
     lexer = Lexer.new("\r");
     if (lexer.nextToken()) |_| unreachable else |err| p("{} {?s}\n", .{err, lexer.error_message});
     lexer = Lexer.new("\n\r");
+    // token = try lexer.nextToken();
+    // p("{} {}\n", .{token.type, token.value});
+    // if (true) unreachable;
     if (lexer.nextToken()) |_| unreachable else |err| p("{} {?s}\n", .{err, lexer.error_message});
 
     // checkIdentOrKeyword
@@ -3086,4 +3267,37 @@ pub fn main() !void {
     assert(token.delimiter_state.end == .char);
     assert(token.delimiter_state.nest.char == '(');
     assert(token.delimiter_state.end.char == ')');
+
+    // nextTokenNeverASymbol
+    lexer = Lexer.new(":foo");
+    token = try lexer.nextToken();
+    assert(token.type == .symbol);
+    assert(token.value == .string);
+    assert(std.mem.eql(u8, "foo", token.value.string));
+
+    lexer = Lexer.new(":foo");
+    token = try lexer.nextTokenNeverASymbol();
+    assert(token.type == .op_colon);
+
+    // nextStringArrayToken
+    lexer = Lexer.new("%w( foo  bar )");
+    lexer.wants_raw = true;
+    token = try lexer.nextToken();
+    assert(token.type == .string_array_start);
+    assert(std.mem.eql(u8, token.raw, "%w("));
+    token = try lexer.nextStringArrayToken();
+    assert(token.type == .string);
+    assert(std.mem.eql(u8, token.raw, "foo"));
+    assert(token.value == .buffer);
+    assert(std.mem.eql(u8, token.value.buffer.items, "foo"));
+    token = try lexer.nextStringArrayToken();
+    assert(token.type == .string);
+    assert(std.mem.eql(u8, token.raw, "bar"));
+    assert(token.value == .buffer);
+    assert(std.mem.eql(u8, token.value.buffer.items, "bar"));
+    token = try lexer.nextStringArrayToken();
+    assert(token.type == .string_array_end);
+    assert(std.mem.eql(u8, token.raw, ")"));
+    token = try lexer.nextStringArrayToken();
+    assert(token.type == .eof);
 }
