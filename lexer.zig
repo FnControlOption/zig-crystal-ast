@@ -1507,15 +1507,15 @@ fn scanNumber(lexer: *Lexer, start: usize, negative: bool) !void {
 
 // fn consumeNumberSuffix
 // nextStringToken
-// nextStringTokenNoescape
-// checkHeredocEnd
-// raiseUnterminatedQuoted
+// fn nextStringTokenNoescape
+// fn checkHeredocEnd
+// fn raiseUnterminatedQuoted
 // nextMacroToken
 // lookahead
 // peekAhead
-// skipMacroWhitespace
-// checkMacroOpeningKeyword
-// checkHeredocStart
+// fn skipMacroWhitespace
+const checkMacroOpeningKeyword = MacroLexer.checkMacroOpeningKeyword;
+const checkHeredocStart = MacroLexer.checkHeredocStart;
 
 pub fn consumeOctalEscape(lexer: *Lexer, first_char: u8) !u8 {
     var value = first_char - '0';
@@ -1802,28 +1802,17 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
 }
 
 fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
-    const tmp: struct {
-        has_single_quote: bool,
-        first_char: u8,
-    } = switch (lexer.nextChar()) {
-        '\'' => .{
-            .has_single_quote = true,
-            .first_char = lexer.nextChar(),
-        },
-        else => |char| .{
-            .has_single_quote = false,
-            .first_char = char,
-        }
-    };
+    var has_single_quote = false;
+    var found_closing_single_quote = false;
 
-    const first_char = tmp.first_char;
-
-    if (!isIdentPart(first_char)) {
-        try lexer.raise("heredoc identifier starts with invalid character");
+    if (lexer.nextChar() == '\'') {
+        has_single_quote = true;
+        lexer.skipChar();
     }
 
-    const has_single_quote = tmp.has_single_quote;
-    var found_closing_single_quote = false;
+    if (!isIdentPart(lexer.currentChar())) {
+        try lexer.raise("heredoc identifier starts with invalid character");
+    }
 
     const start_here = lexer.current_pos;
     var end_here: usize = 0;
@@ -2400,14 +2389,7 @@ pub fn isIdentPartOrEnd(char: u8) bool {
     return isIdentPart(char) or char == '?' or char == '!';
 }
 
-pub fn peekNotIdentPartOrEndNextChar(lexer: *Lexer) bool {
-    const next_char = lexer.peekNextChar();
-    if (isIdentPartOrEnd(next_char) or next_char == ':') {
-        return false;
-    }
-    lexer.skipChar();
-    return true;
-}
+const peekNotIdentPartOrEndNextChar = MacroLexer.peekNotIdentPartOrEndNextChar;
 
 pub fn closingChar(char: u8) u8 {
     return switch (char) {
@@ -2532,6 +2514,205 @@ pub fn raiseLoc(
     );
     // TODO: location.filename
 }
+
+const MacroLexer = struct {
+    fn checkMacroOpeningKeyword(lexer: *Lexer, beginning_of_line: bool, is_abstract_def: *bool) bool {
+        switch (lexer.currentChar()) {
+            'a' => {
+                switch(lexer.nextChar()) {
+                    'b' => {
+                        if (lexer.charSequence("stract") and std.ascii.isWhitespace(lexer.nextChar())) {
+                            switch (lexer.nextChar()) {
+                                'd' => {
+                                    if (lexer.charSequence("ef") and lexer.peekNotIdentPartOrEndNextChar()) {
+                                        is_abstract_def.* = true;
+                                        return true;
+                                    }
+                                },
+                                'c' => {
+                                    return lexer.charSequence("lass") and lexer.peekNotIdentPartOrEndNextChar();
+                                },
+                                's' => {
+                                    return lexer.charSequence("truct") and lexer.peekNotIdentPartOrEndNextChar();
+                                },
+                                else => {
+                                    return false;
+                                }
+                            }
+                        }
+                    },
+                    'n' => {
+                        return lexer.charSequence("notation") and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    else => {
+                        return false;
+                    }
+                }
+            },
+            'b' => {
+                return lexer.charSequence("egin") and lexer.peekNotIdentPartOrEndNextChar();
+            },
+            'c' => {
+                switch(lexer.nextChar()) {
+                    'a' => {
+                        return lexer.charSequence("se") and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    'l' => {
+                        return lexer.charSequence("ass") and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    else => {
+                        return false;
+                    }
+                }
+            },
+            'd' => {
+                switch(lexer.nextChar()) {
+                    'o' => {
+                        return lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    'e' => {
+                        return lexer.nextChar() == 'f' and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    else => {
+                        return false;
+                    }
+                }
+            },
+            'f' => {
+                return lexer.charSequence("un") and lexer.peekNotIdentPartOrEndNextChar();
+            },
+            'i' => {
+                return beginning_of_line and lexer.nextChar() == 'f' and lexer.peekNotIdentPartOrEndNextChar();
+            },
+            'l' => {
+                return lexer.charSequence("ib") and lexer.peekNotIdentPartOrEndNextChar();
+            },
+            'm' => {
+                switch(lexer.nextChar()) {
+                    'a' => {
+                        return lexer.charSequence("cro") and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    'o' => {
+                        return lexer.charSequence("dule") and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    else => {
+                        return false;
+                    }
+                }
+            },
+            's' => {
+                switch(lexer.nextChar()) {
+                    'e' => {
+                        return lexer.charSequence("lect") and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    't' => {
+                        return lexer.charSequence("ruct") and lexer.peekNotIdentPartOrEndNextChar();
+                    },
+                    else => {
+                        return false;
+                    }
+                }
+            },
+            'u' => {
+                if (lexer.nextChar() == 'n') {
+                    switch(lexer.nextChar()) {
+                        'i' => {
+                            return lexer.charSequence("on") and lexer.peekNotIdentPartOrEndNextChar();
+                        },
+                        'l' => {
+                            return beginning_of_line and lexer.charSequence("ess") and lexer.peekNotIdentPartOrEndNextChar();
+                        },
+                        't' => {
+                            return beginning_of_line and lexer.charSequence("il") and lexer.peekNotIdentPartOrEndNextChar();
+                        },
+                        else => {
+                            return false;
+                        }
+                    }
+                }
+            },
+            'w' => {
+                return beginning_of_line and lexer.charSequence("hile") and lexer.peekNotIdentPartOrEndNextChar();
+            },
+            else => {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    fn checkHeredocStart(lexer: *Lexer) ?Token.DelimiterState {
+        if (lexer.currentChar() != '<' or !lexer.charSequence("<-")) {
+            return null;
+        }
+
+        var has_single_quote = false;
+        var found_closing_single_quote = false;
+
+        if (lexer.nextChar() == '\'') {
+            has_single_quote = true;
+            lexer.skipChar();
+        }
+
+        if (!isIdentPart(lexer.currentChar())) {
+            return null;
+        }
+
+        const start_here = lexer.current_pos;
+        var end_here: usize = 0;
+
+        while (true) {
+            const char = lexer.nextChar();
+            if (char == '\r') {
+                if (lexer.peekNextChar() == '\n') {
+                    end_here = lexer.current_pos;
+                    lexer.skipChar();
+                    break;
+                } else {
+                    return null;
+                }
+            } else if (char == '\n') {
+                end_here = lexer.current_pos;
+                break;
+            } else if (isIdentPart(char)) {
+                // ok
+            } else if (char == 0) {
+                return null;
+            } else if (char == '\'' and has_single_quote) {
+                found_closing_single_quote = true;
+                end_here = lexer.current_pos;
+                lexer.skipChar();
+                break;
+            } else if (has_single_quote) {
+                // wait until another quote
+            } else {
+                end_here = lexer.current_pos;
+                break;
+            }
+        }
+
+        if (has_single_quote and !found_closing_single_quote) {
+            return null;
+        }
+
+        const here = lexer.stringRange2(start_here, end_here);
+        return .{
+            .kind = .heredoc,
+            .nest = .{ .string = here },
+            .end = .{ .string = here },
+            .allow_escapes = !has_single_quote,
+        };
+    }
+
+    fn peekNotIdentPartOrEndNextChar(lexer: *Lexer) bool {
+        const next_char = lexer.peekNextChar();
+        if (isIdentPartOrEnd(next_char) or next_char == ':') {
+            return false;
+        }
+        lexer.skipChar();
+        return true;
+    }
+};
 
 const StringLexer = struct {
     fn nextStringArrayToken(lexer: *Lexer) !Token {
@@ -3300,4 +3481,43 @@ pub fn main() !void {
     assert(std.mem.eql(u8, token.raw, ")"));
     token = try lexer.nextStringArrayToken();
     assert(token.type == .eof);
+
+    // checkHeredocStart
+    lexer = Lexer.new("foo");
+    assert(lexer.checkHeredocStart() == null);
+    lexer = Lexer.new("<<-foo");
+    assert(lexer.checkHeredocStart() == null);
+    lexer = Lexer.new("<<-foo\r");
+    assert(lexer.checkHeredocStart() == null);
+    lexer = Lexer.new("<<-foo\n");
+    var delimiter_state = lexer.checkHeredocStart().?;
+    assert(std.mem.eql(u8, "foo", delimiter_state.nest.string));
+    lexer = Lexer.new("<<-'foo bar'");
+    delimiter_state = lexer.checkHeredocStart().?;
+    assert(std.mem.eql(u8, "foo bar", delimiter_state.nest.string));
+
+    // checkMacroOpeningKeyword
+    lexer = Lexer.new("abstract def");
+    var is_abstract_def = false;
+    assert(lexer.checkMacroOpeningKeyword(true, &is_abstract_def));
+    assert(is_abstract_def);
+
+    for ([_][]const u8{
+        "abstract class", "abstract struct", "annotation",
+        "begin",
+        "case", "class",
+        "do", "def",
+        "fun",
+        "if",
+        "lib",
+        "macro", "module",
+        "select", "struct",
+        "union", "unless", "until",
+        "while",
+    }) |s| {
+        lexer = Lexer.new(s);
+        is_abstract_def = false;
+        assert(lexer.checkMacroOpeningKeyword(true, &is_abstract_def));
+        assert(is_abstract_def == false);
+    }
 }
