@@ -434,50 +434,44 @@ pub const DelimiterKind = enum {
     heredoc,
 };
 
-pub const Delimiter = union(enum) {
-    char: u8,
-    string: []const u8,
+pub const Delimiters = union(DelimiterKind) {
+    string: struct { nest: u8, end: u8 },
+    regex: struct { nest: u8, end: u8 },
+    string_array: struct { nest: u8, end: u8 },
+    symbol_array: struct { nest: u8, end: u8 },
+    command: struct { nest: u8, end: u8 },
+    heredoc: []const u8,
 
-    pub fn charOrNull(delimiter: Delimiter) ?u8 {
-        return switch (delimiter) {
-            .char => |char| char,
-            .string => null,
-        };
+    pub fn of(
+        comptime kind: DelimiterKind,
+        nest: u8,
+        end: u8,
+    ) Delimiters {
+        return @unionInit(Delimiters, @tagName(kind), .{
+            .nest = nest,
+            .end = end,
+        });
     }
 };
 
 pub const DelimiterState = struct {
-    kind: DelimiterKind = .string,
-    nest: Delimiter = .{ .char = 0 },
-    end: Delimiter = .{ .char = 0 },
+    delimiters: Delimiters = Delimiters.of(.string, 0, 0),
     open_count: i32 = 0,
     heredoc_indent: i32 = 0,
     allow_escapes: bool = true,
 
     // pub fn default() DelimiterState {
     //     return .{
-    //         .kind = .string,
-    //         .nest = .{ .char = 0 },
-    //         .end = .{ .char = 0 },
+    //         .delimiters = Delimiters.of(.string, 0, 0),
     //         .open_count = 0,
     //         .heredoc_indent = 0,
     //         .allow_escapes = true,
     //     };
     // }
 
-    pub fn new(kind: DelimiterKind, nest: u8, end: u8) DelimiterState {
-        return .{
-            .kind = kind,
-            .nest = .{ .char = nest },
-            .end = .{ .char = end },
-        };
-    }
-
     // pub fn withOpenCountDelta(state: DelimiterState, delta: i32) DelimiterState {
     //     return .{
-    //         .kind = state.kind,
-    //         .nest = state.nest,
-    //         .end = state.end,
+    //         .delimiters = state.delimiters,
     //         .open_count = state.open_count + delta,
     //         .heredoc_indent = state.heredoc_indent,
     //         .allow_escapes = state.allow_escapes,
@@ -486,9 +480,7 @@ pub const DelimiterState = struct {
 
     pub fn withHeredocIndent(state: DelimiterState, indent: i32) DelimiterState {
         return .{
-            .kind = state.kind,
-            .nest = state.nest,
-            .end = state.end,
+            .delimiters = state.delimiters,
             .open_count = state.open_count,
             .heredoc_indent = indent,
             .allow_escapes = state.allow_escapes,
@@ -559,8 +551,8 @@ pub fn main() void {
     p("{}\n", .{Kind.op_percent.isAssignmentOperator()});
     p("{}\n", .{MacroState{}});
     p("{}\n", .{DelimiterState{}});
-    p("{}\n", .{DelimiterState.new(.regex, '{', '}')});
-    p("{}\n", .{(DelimiterState{}).withOpenCountDelta(3)});
+    p("{}\n", .{Delimiters.of(.regex, '{', '}')});
+    // p("{}\n", .{(DelimiterState{}).withOpenCountDelta(3)});
     p("{}\n", .{(DelimiterState{}).withHeredocIndent(5)});
     p("{}\n", .{Token{}});
     var token = Token{};

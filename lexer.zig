@@ -378,17 +378,13 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 lexer.token.type = .op_slash;
             } else if (lexer.slash_is_regex) {
                 lexer.delimiterStartNoAdvance(.{
-                    .kind = .regex,
-                    .nest = .{ .char = '/' },
-                    .end = .{ .char = '/' },
+                    .delimiters = Token.Delimiters.of(.regex, '/', '/'),
                 }, start);
             } else if (std.ascii.isWhitespace(char) or char == 0) {
                 lexer.token.type = .op_slash;
             } else if (lexer.wants_regex) {
                 lexer.delimiterStartNoAdvance(.{
-                    .kind = .regex,
-                    .nest = .{ .char = '/' },
-                    .end = .{ .char = '/' },
+                    .delimiters = Token.Delimiters.of(.regex, '/', '/'),
                 }, start);
             } else {
                 lexer.token.type = .op_slash;
@@ -404,9 +400,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     },
                     '(', '<', '[', '{', '|' => |char| {
                         lexer.delimiterStart(.{
-                            .kind = .string,
-                            .nest = .{ .char = char },
-                            .end = .{ .char = closingChar(char) },
+                            .delimiters = Token.Delimiters.of(.string, char, closingChar(char)),
                         }, start);
                     },
                     'i' => {
@@ -416,9 +410,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                                 lexer.skipTokenChar(.symbol_array_start);
                                 lexer.setTokenRawFromStart(start);
                                 lexer.token.delimiter_state = .{
-                                    .kind = .symbol_array,
-                                    .nest = .{ .char = char },
-                                    .end = .{ .char = closingChar(char) },
+                                    .delimiters = Token.Delimiters.of(.symbol_array, char, closingChar(char)),
                                 };
                             },
                             else => {
@@ -431,9 +423,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             '(', '<', '[', '{', '|' => |char| {
                                 lexer.skipChar();
                                 lexer.delimiterStart(.{
-                                    .kind = .string,
-                                    .nest = .{ .char = char },
-                                    .end = .{ .char = closingChar(char) },
+                                    .delimiters = Token.Delimiters.of(.string, char, closingChar(char)),
                                     .allow_escapes = false,
                                 }, start);
                             },
@@ -447,9 +437,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             '(', '<', '[', '{', '|' => |char| {
                                 lexer.skipChar();
                                 lexer.delimiterStart(.{
-                                    .kind = .string,
-                                    .nest = .{ .char = char },
-                                    .end = .{ .char = closingChar(char) },
+                                    .delimiters = Token.Delimiters.of(.string, char, closingChar(char)),
                                 }, start);
                             },
                             else => {
@@ -461,9 +449,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         switch (lexer.nextChar()) {
                             '(', '<', '[', '{', '|' => |char| {
                                 lexer.delimiterStart(.{
-                                    .kind = .regex,
-                                    .nest = .{ .char = char },
-                                    .end = .{ .char = closingChar(char) },
+                                    .delimiters = Token.Delimiters.of(.regex, char, closingChar(char)),
                                 }, start);
                             },
                             else => {
@@ -475,9 +461,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         switch (lexer.nextChar()) {
                             '(', '<', '[', '{', '|' => |char| {
                                 lexer.delimiterStart(.{
-                                    .kind = .command,
-                                    .nest = .{ .char = char },
-                                    .end = .{ .char = closingChar(char) },
+                                    .delimiters = Token.Delimiters.of(.command, char, closingChar(char)),
                                 }, start);
                             },
                             else => {
@@ -492,9 +476,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                                 lexer.skipTokenChar(.string_array_start);
                                 lexer.setTokenRawFromStart(start);
                                 lexer.token.delimiter_state = .{
-                                    .kind = .string_array,
-                                    .nest = .{ .char = char },
-                                    .end = .{ .char = closingChar(char) },
+                                    .delimiters = Token.Delimiters.of(.string_array, char, closingChar(char)),
                                 };
                             },
                             else => {
@@ -693,17 +675,13 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 lexer.token.type = .op_grave;
             } else {
                 lexer.delimiterStart(.{
-                    .kind = .command,
-                    .nest = .{ .char = '`' },
-                    .end = .{ .char = '`' },
+                    .delimiters = Token.Delimiters.of(.command, '`', '`'),
                 }, start);
             }
         },
         '"' => {
             lexer.delimiterStart(.{
-                .kind = .string,
-                .nest = .{ .char = '"' },
-                .end = .{ .char = '"' },
+                .delimiters = Token.Delimiters.of(.string, '"', '"'),
             }, start);
         },
         '0'...'9' => {
@@ -1515,13 +1493,13 @@ fn raiseUnterminatedQuoted(
     lexer: *Lexer,
     delimiter_state: Token.DelimiterState,
 ) !void {
-    return lexer.raise(switch (delimiter_state.kind) {
+    return lexer.raise(switch (delimiter_state.delimiters) {
         .command => "Unterminated command literal",
         .regex => "Unterminated regular expression",
-        .heredoc => try std.fmt.allocPrint(
+        .heredoc => |delimiter| try std.fmt.allocPrint(
             lexer.allocator,
             "Unterminated heredoc: can't find \"{s}\" anywhere before the end of file",
-            .{delimiter_state.end.string},
+            .{delimiter},
         ),
         .string => "Unterminated string literal",
         .string_array, .symbol_array => unreachable,
@@ -1877,9 +1855,7 @@ fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
     const here = lexer.stringRange2(start_here, end_here);
 
     lexer.delimiterStartNoAdvance(.{
-        .kind = .heredoc,
-        .nest = .{ .string = here },
-        .end = .{ .string = here },
+        .delimiters = .{ .heredoc = here },
         .allow_escapes = !has_single_quote,
     }, start);
 }
@@ -2729,9 +2705,7 @@ const MacroLexer = struct {
 
         const here = lexer.stringRange2(start_here, end_here);
         return .{
-            .kind = .heredoc,
-            .nest = .{ .string = here },
-            .end = .{ .string = here },
+            .delimiters = .{ .heredoc = here },
             .allow_escapes = !has_single_quote,
         };
     }
@@ -2762,8 +2736,19 @@ const StringLexer = struct {
             }
         }
 
-        const delimiter_end = lexer.token.delimiter_state.end.charOrNull();
-        const delimiter_nest = lexer.token.delimiter_state.nest.charOrNull();
+        var delimiter_end: u8 = undefined;
+        var delimiter_nest: u8 = undefined;
+        switch (lexer.token.delimiter_state.delimiters) {
+            .string_array => |delimiters| {
+                delimiter_end = delimiters.end;
+                delimiter_nest = delimiters.nest;
+            },
+            .symbol_array => |delimiters| {
+                delimiter_end = delimiters.end;
+                delimiter_nest = delimiters.nest;
+            },
+            else => unreachable,
+        }
 
         if (lexer.currentChar() == delimiter_end) {
             const start = lexer.current_pos;
@@ -3234,23 +3219,19 @@ pub fn main() !void {
 
     lexer = Lexer.new("\"");
     token = try lexer.nextToken();
-    p("{} {}\n", .{token.type, token.delimiter_state.kind});
+    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .string);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '"');
-    assert(token.delimiter_state.end.char == '"');
+    assert(token.delimiter_state.delimiters == .string);
+    assert(token.delimiter_state.delimiters.string.nest == '"');
+    assert(token.delimiter_state.delimiters.string.end == '"');
 
     lexer = Lexer.new("`");
     token = try lexer.nextToken();
-    p("{} {}\n", .{token.type, token.delimiter_state.kind});
+    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .command);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '`');
-    assert(token.delimiter_state.end.char == '`');
+    assert(token.delimiter_state.delimiters == .command);
+    assert(token.delimiter_state.delimiters.command.nest == '`');
+    assert(token.delimiter_state.delimiters.command.end == '`');
 
     // consumeHeredocStart
     lexer = Lexer.new("<<-EOS");
@@ -3261,22 +3242,16 @@ pub fn main() !void {
     lexer = Lexer.new("<<-EOS,");
     token = try lexer.nextToken();
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .heredoc);
-    assert(token.delimiter_state.nest == .string);
-    assert(token.delimiter_state.end == .string);
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.delimiter_state.end.string});
-    assert(std.mem.eql(u8, "EOS", token.delimiter_state.nest.string));
-    assert(std.mem.eql(u8, "EOS", token.delimiter_state.end.string));
+    assert(token.delimiter_state.delimiters == .heredoc);
+    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
+    assert(std.mem.eql(u8, "EOS", token.delimiter_state.delimiters.heredoc));
 
     lexer = Lexer.new("<<-'FOO BAR'");
     token = try lexer.nextToken();
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .heredoc);
-    assert(token.delimiter_state.nest == .string);
-    assert(token.delimiter_state.end == .string);
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.delimiter_state.end.string});
-    assert(std.mem.eql(u8, "FOO BAR", token.delimiter_state.nest.string));
-    assert(std.mem.eql(u8, "FOO BAR", token.delimiter_state.end.string));
+    assert(token.delimiter_state.delimiters == .heredoc);
+    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
+    assert(std.mem.eql(u8, "FOO BAR", token.delimiter_state.delimiters.heredoc));
 
     lexer = Lexer.new("//");
     lexer.wants_def_or_macro_name = true;
@@ -3315,13 +3290,11 @@ pub fn main() !void {
     lexer.slash_is_regex = true;
     lexer.wants_regex = false;
     token = try lexer.nextToken();
-    p("{} {}\n", .{token.type, token.delimiter_state.kind});
+    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .regex);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '/');
-    assert(token.delimiter_state.end.char == '/');
+    assert(token.delimiter_state.delimiters == .regex);
+    assert(token.delimiter_state.delimiters.regex.nest == '/');
+    assert(token.delimiter_state.delimiters.regex.end == '/');
 
     lexer = Lexer.new("/\t");
     lexer.wants_def_or_macro_name = false;
@@ -3336,13 +3309,11 @@ pub fn main() !void {
     lexer.slash_is_regex = false;
     lexer.wants_regex = true;
     token = try lexer.nextToken();
-    p("{} {}\n", .{token.type, token.delimiter_state.kind});
+    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .regex);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '/');
-    assert(token.delimiter_state.end.char == '/');
+    assert(token.delimiter_state.delimiters == .regex);
+    assert(token.delimiter_state.delimiters.regex.nest == '/');
+    assert(token.delimiter_state.delimiters.regex.end == '/');
 
     lexer = Lexer.new("/foo");
     lexer.wants_def_or_macro_name = false;
@@ -3386,13 +3357,11 @@ pub fn main() !void {
     lexer.wants_def_or_macro_name = false;
     lexer.wants_raw = true;
     token = try lexer.nextToken();
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.raw});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
     assert(token.type == .symbol_array_start);
-    assert(token.delimiter_state.kind == .symbol_array);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '(');
-    assert(token.delimiter_state.end.char == ')');
+    assert(token.delimiter_state.delimiters == .symbol_array);
+    assert(token.delimiter_state.delimiters.symbol_array.nest == '(');
+    assert(token.delimiter_state.delimiters.symbol_array.end == ')');
 
     lexer = Lexer.new("%w");
     lexer.wants_def_or_macro_name = false;
@@ -3404,13 +3373,11 @@ pub fn main() !void {
     lexer.wants_def_or_macro_name = false;
     lexer.wants_raw = true;
     token = try lexer.nextToken();
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.raw});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
     assert(token.type == .string_array_start);
-    assert(token.delimiter_state.kind == .string_array);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '(');
-    assert(token.delimiter_state.end.char == ')');
+    assert(token.delimiter_state.delimiters == .string_array);
+    assert(token.delimiter_state.delimiters.string_array.nest == '(');
+    assert(token.delimiter_state.delimiters.string_array.end == ')');
 
     lexer = Lexer.new("%q");
     lexer.wants_def_or_macro_name = false;
@@ -3422,13 +3389,11 @@ pub fn main() !void {
     lexer.wants_def_or_macro_name = false;
     lexer.wants_raw = true;
     token = try lexer.nextToken();
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.raw});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .string);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '(');
-    assert(token.delimiter_state.end.char == ')');
+    assert(token.delimiter_state.delimiters == .string);
+    assert(token.delimiter_state.delimiters.string.nest == '(');
+    assert(token.delimiter_state.delimiters.string.end == ')');
     assert(token.delimiter_state.allow_escapes == false);
 
     lexer = Lexer.new("%Q");
@@ -3441,13 +3406,11 @@ pub fn main() !void {
     lexer.wants_def_or_macro_name = false;
     lexer.wants_raw = true;
     token = try lexer.nextToken();
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.raw});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .string);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '(');
-    assert(token.delimiter_state.end.char == ')');
+    assert(token.delimiter_state.delimiters == .string);
+    assert(token.delimiter_state.delimiters.string.nest == '(');
+    assert(token.delimiter_state.delimiters.string.end == ')');
     assert(token.delimiter_state.allow_escapes == true);
 
     lexer = Lexer.new("%r");
@@ -3458,13 +3421,11 @@ pub fn main() !void {
     lexer.wants_def_or_macro_name = false;
     lexer.wants_raw = true;
     token = try lexer.nextToken();
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.raw});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .regex);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '(');
-    assert(token.delimiter_state.end.char == ')');
+    assert(token.delimiter_state.delimiters == .regex);
+    assert(token.delimiter_state.delimiters.regex.nest == '(');
+    assert(token.delimiter_state.delimiters.regex.end == ')');
 
     lexer = Lexer.new("%x");
     lexer.wants_def_or_macro_name = false;
@@ -3474,13 +3435,11 @@ pub fn main() !void {
     lexer.wants_def_or_macro_name = false;
     lexer.wants_raw = true;
     token = try lexer.nextToken();
-    p("{} {} {s}\n", .{token.type, token.delimiter_state.kind, token.raw});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
     assert(token.type == .delimiter_start);
-    assert(token.delimiter_state.kind == .command);
-    assert(token.delimiter_state.nest == .char);
-    assert(token.delimiter_state.end == .char);
-    assert(token.delimiter_state.nest.char == '(');
-    assert(token.delimiter_state.end.char == ')');
+    assert(token.delimiter_state.delimiters == .command);
+    assert(token.delimiter_state.delimiters.command.nest == '(');
+    assert(token.delimiter_state.delimiters.command.end == ')');
 
     // nextTokenNeverASymbol
     lexer = Lexer.new(":foo");
@@ -3524,10 +3483,10 @@ pub fn main() !void {
     assert(lexer.checkHeredocStart() == null);
     lexer = Lexer.new("<<-foo\n");
     var delimiter_state = lexer.checkHeredocStart().?;
-    assert(std.mem.eql(u8, "foo", delimiter_state.nest.string));
+    assert(std.mem.eql(u8, "foo", delimiter_state.delimiters.heredoc));
     lexer = Lexer.new("<<-'foo bar'");
     delimiter_state = lexer.checkHeredocStart().?;
-    assert(std.mem.eql(u8, "foo bar", delimiter_state.nest.string));
+    assert(std.mem.eql(u8, "foo bar", delimiter_state.delimiters.heredoc));
 
     // checkMacroOpeningKeyword
     lexer = Lexer.new("abstract def");
@@ -3556,42 +3515,30 @@ pub fn main() !void {
 
     // raiseUnterminatedQuoted
     lexer = Lexer.new("foo");
-    if (lexer.raiseUnterminatedQuoted(.{
-        .kind = .heredoc,
-        .nest = .{ .string = "fizz" },
-        .end = .{ .string = "buzz" },
-    })) |_| unreachable else |err| {
+    if (lexer.raiseUnterminatedQuoted(.{ .delimiters = .{ .heredoc = "bar" } })) |_| unreachable else |err| {
         assert(err == error.SyntaxError);
         assert(std.mem.eql(u8, lexer.error_message.?, blk: {
             break :blk "Unterminated heredoc: can't find " ++
-                "\"buzz\" anywhere before the end of file";
+                "\"bar\" anywhere before the end of file";
         }));
     }
 
-    const UnterminatedQuote = struct {
-        kind: Token.DelimiterKind,
-        message: []const u8,
-        fn uq(
-            kind: Token.DelimiterKind,
-            message: []const u8,
-        ) @This() {
-            return .{ .kind = kind, .message = message };
-        }
+    const delimiter_kinds = [_]Token.DelimiterKind{
+        .command,
+        .regex,
+        .string
     };
-    const uq = UnterminatedQuote.uq;
-    for ([_]UnterminatedQuote{
-        uq(.command, "Unterminated command literal"),
-        uq(.regex, "Unterminated regular expression"),
-        uq(.string, "Unterminated string literal"),
-    }) |u| {
+    var messages = [_][]const u8{
+        "Unterminated command literal",
+        "Unterminated regular expression",
+        "Unterminated string literal",
+    };
+    assert(delimiter_kinds.len == messages.len);
+    inline for (delimiter_kinds) |kind, i| {
         lexer = Lexer.new("foo");
-        if (lexer.raiseUnterminatedQuoted(.{
-            .kind = u.kind,
-            .nest = .{ .char = '`' },
-            .end = .{ .char = '"' },
-        })) |_| unreachable else |err| {
+        if (lexer.raiseUnterminatedQuoted(.{ .delimiters = Token.Delimiters.of(kind, '`', '"') })) |_| unreachable else |err| {
             assert(err == error.SyntaxError);
-            assert(std.mem.eql(u8, u.message, lexer.error_message.?));
+            assert(std.mem.eql(u8, messages[i], lexer.error_message.?));
         }
     }
 }
