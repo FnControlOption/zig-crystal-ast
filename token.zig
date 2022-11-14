@@ -435,11 +435,13 @@ pub const DelimiterKind = enum {
 };
 
 pub const Delimiters = union(DelimiterKind) {
-    string: struct { nest: u8, end: u8 },
-    regex: struct { nest: u8, end: u8 },
-    string_array: struct { nest: u8, end: u8 },
-    symbol_array: struct { nest: u8, end: u8 },
-    command: struct { nest: u8, end: u8 },
+    pub const Pair = struct { nest: u8, end: u8 };
+
+    string: Pair,
+    regex: Pair,
+    string_array: Pair,
+    symbol_array: Pair,
+    command: Pair,
     heredoc: []const u8,
 
     pub fn of(
@@ -447,7 +449,7 @@ pub const Delimiters = union(DelimiterKind) {
         nest: u8,
         end: u8,
     ) Delimiters {
-        return @unionInit(Delimiters, @tagName(kind), .{
+        return @unionInit(Delimiters, @tagName(kind), Pair{
             .nest = nest,
             .end = end,
         });

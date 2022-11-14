@@ -2736,21 +2736,13 @@ const StringLexer = struct {
             }
         }
 
-        var delimiter_end: u8 = undefined;
-        var delimiter_nest: u8 = undefined;
-        switch (lexer.token.delimiter_state.delimiters) {
-            .string_array => |delimiters| {
-                delimiter_end = delimiters.end;
-                delimiter_nest = delimiters.nest;
-            },
-            .symbol_array => |delimiters| {
-                delimiter_end = delimiters.end;
-                delimiter_nest = delimiters.nest;
-            },
+        const delimiters = switch (lexer.token.delimiter_state.delimiters) {
+            .string_array => |delimiters| delimiters,
+            .symbol_array => |delimiters| delimiters,
             else => unreachable,
-        }
+        };
 
-        if (lexer.currentChar() == delimiter_end) {
+        if (lexer.currentChar() == delimiters.end) {
             const start = lexer.current_pos;
             lexer.skipChar();
             lexer.setTokenRawFromStart(start);
@@ -2767,7 +2759,7 @@ const StringLexer = struct {
             const char = lexer.currentChar();
             if (char == 0) {
                 break; // raise is handled by parser
-            } else if (char == delimiter_end) {
+            } else if (char == delimiters.end) {
                 if (!escaped) {
                     if (lexer.token.delimiter_state.open_count == 0) {
                         break;
@@ -2775,7 +2767,7 @@ const StringLexer = struct {
                         lexer.token.delimiter_state.open_count -= 1;
                     }
                 }
-            } else if (char == delimiter_nest) {
+            } else if (char == delimiters.nest) {
                 if (!escaped) {
                     lexer.token.delimiter_state.open_count += 1;
                 }
