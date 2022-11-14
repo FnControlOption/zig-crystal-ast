@@ -23,7 +23,7 @@ wants_def_or_macro_name: bool = false,
 string: []const u8,
 current_pos: usize = 0,
 token: Token = .{},
-temp_token: Token = .{},
+// temp_token: Token = .{},
 line_number: usize = 1,
 column_number: usize = 1,
 wants_symbol: bool = true,
@@ -1509,11 +1509,29 @@ fn scanNumber(lexer: *Lexer, start: usize, negative: bool) !void {
 // nextStringToken
 // fn nextStringTokenNoescape
 // fn checkHeredocEnd
-// fn raiseUnterminatedQuoted
+
+fn raiseUnterminatedQuoted(
+    lexer: *Lexer,
+    delimiter_state: Token.DelimiterState,
+) !void {
+    return lexer.raise(switch (delimiter_state.kind) {
+        .command => "Unterminated command literal",
+        .regex => "Unterminated regular expression",
+        .heredoc => try std.fmt.allocPrint(
+            lexer.allocator,
+            "Unterminated heredoc: can't find \"{s}\" anywhere before the end of file",
+            .{delimiter_state.end.string},
+        ),
+        .string => "Unterminated string literal",
+        .string_array, .symbol_array => unreachable,
+    });
+}
+
 // nextMacroToken
 // lookahead
 // peekAhead
-// fn skipMacroWhitespace
+
+const skipMacroWhitespace = MacroLexer.skipMacroWhitespace;
 const checkMacroOpeningKeyword = MacroLexer.checkMacroOpeningKeyword;
 const checkHeredocStart = MacroLexer.checkHeredocStart;
 
@@ -2516,6 +2534,15 @@ pub fn raiseLoc(
 }
 
 const MacroLexer = struct {
+    fn skipMacroWhitespace(lexer: *Lexer) void {
+        while (std.ascii.isWhitespace(lexer.currentChar())) {
+            if (lexer.currentChar() == '\n') {
+                lexer.incrLineNumberWithColumn(0);
+            }
+            lexer.skipChar();
+        }
+    }
+
     fn checkMacroOpeningKeyword(lexer: *Lexer, beginning_of_line: bool, is_abstract_def: *bool) bool {
         switch (lexer.currentChar()) {
             'a' => {
@@ -3519,5 +3546,46 @@ pub fn main() !void {
         is_abstract_def = false;
         assert(lexer.checkMacroOpeningKeyword(true, &is_abstract_def));
         assert(is_abstract_def == false);
+    }
+
+    // raiseUnterminatedQuoted
+    lexer = Lexer.new("foo");
+    if (lexer.raiseUnterminatedQuoted(.{
+        .kind = .heredoc,
+        .nest = .{ .string = "fizz" },
+        .end = .{ .string = "buzz" },
+    })) |_| unreachable else |err| {
+        assert(err == error.SyntaxError);
+        assert(std.mem.eql(u8, lexer.error_message.?, blk: {
+            break :blk "Unterminated heredoc: can't find " ++
+                "\"buzz\" anywhere before the end of file";
+        }));
+    }
+
+    const UnterminatedQuote = struct {
+        kind: Token.DelimiterKind,
+        message: []const u8,
+        fn uq(
+            kind: Token.DelimiterKind,
+            message: []const u8,
+        ) @This() {
+            return .{ .kind = kind, .message = message };
+        }
+    };
+    const uq = UnterminatedQuote.uq;
+    for ([_]UnterminatedQuote{
+        uq(.command, "Unterminated command literal"),
+        uq(.regex, "Unterminated regular expression"),
+        uq(.string, "Unterminated string literal"),
+    }) |u| {
+        lexer = Lexer.new("foo");
+        if (lexer.raiseUnterminatedQuoted(.{
+            .kind = u.kind,
+            .nest = .{ .char = '`' },
+            .end = .{ .char = '"' },
+        })) |_| unreachable else |err| {
+            assert(err == error.SyntaxError);
+            assert(std.mem.eql(u8, u.message, lexer.error_message.?));
+        }
     }
 }
