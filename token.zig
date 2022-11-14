@@ -181,6 +181,7 @@ pub const Kind = enum {
 
     // the following operator kinds should be sorted by their codepoints
 
+    // zig fmt: off
     op_bang,                     // !
     op_bang_eq,                  // !=
     op_bang_tilde,               // !~
@@ -255,6 +256,7 @@ pub const Kind = enum {
     op_bar_bar_eq,               // ||=
     op_rcurly,                   // }
     op_tilde,                    // ~
+    // zig fmt: on
 
     pub fn toString(kind: Kind) []const u8 {
         return switch (kind) {
@@ -338,7 +340,7 @@ pub const Kind = enum {
             .magic_file => "__FILE__",
             .magic_line => "__LINE__",
 
-            else => @tagName(kind)
+            else => @tagName(kind),
         };
     }
 
@@ -355,19 +357,21 @@ pub const Kind = enum {
 
     pub fn isAssignmentOperator(kind: Kind) bool {
         return switch (kind) {
+            // zig fmt: off
             .op_plus_eq, .op_minus_eq, .op_star_eq, .op_slash_eq, .op_slash_slash_eq,
             .op_percent_eq, .op_bar_eq, .op_amp_eq, .op_caret_eq, .op_star_star_eq,
             .op_lt_lt_eq, .op_gt_gt_eq, .op_bar_bar_eq, .op_amp_amp_eq, .op_amp_plus_eq,
             .op_amp_minus_eq, .op_amp_star_eq
             => true,
-            else => false
+            // zig fmt: on
+            else => false,
         };
     }
 
     pub fn isMagic(kind: Kind) bool {
         return switch (kind) {
             .magic_dir, .magic_end_line, .magic_file, .magic_line => true,
-            else => false
+            else => false,
         };
     }
 };
@@ -544,6 +548,7 @@ pub fn copyFrom(self: *Token, other: Token) void {
     self.doc_buffer = other.doc_buffer;
 }
 
+// zig fmt: off
 pub fn main() void {
     const p = @import("std").debug.print;
     p("{}\n", .{Keyword.@"else"});

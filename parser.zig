@@ -747,7 +747,7 @@ pub fn consumeDefOrMacroName(parser: *Parser) ![]const u8 {
     lexer.wants_def_or_macro_name = false;
     return switch (lexer.token.type) {
         .ident, .@"const" => identToString(lexer.token),
-        else => |token_type| token_type.toString()
+        else => |token_type| token_type.toString(),
     };
 }
 
@@ -841,7 +841,7 @@ pub fn checkVoidValue(parser: *Parser, exp: Node, location: Location) !void {
         .@"break", .next, .@"return" => {
             try lexer.raiseLoc("void value expression", location);
         },
-        else => {}
+        else => {},
     }
 }
 
@@ -856,10 +856,10 @@ pub fn checkVoidExpressionKeyword(parser: *Parser) !void {
                         // TODO: keyword.toString().len
                     }
                 },
-                else => {}
+                else => {},
             }
         },
-        else => {}
+        else => {},
     }
 }
 
@@ -954,7 +954,7 @@ pub fn unexpectedTokenInAtomic(parser: *Parser) !void {
         const message = try std.fmt.allocPrint(
             parser.allocator,
             "unterminated {s}",
-            .{ unclosed.name },
+            .{unclosed.name},
         );
         try lexer.raiseLoc(message, unclosed.location);
     }
@@ -986,6 +986,7 @@ pub fn tempArgName(parser: *Parser) ![]const u8 {
     return arg_name;
 }
 
+// zig fmt: off
 pub fn main() !void {
     const p = @import("std").debug.print;
     const assert = @import("std").debug.assert;

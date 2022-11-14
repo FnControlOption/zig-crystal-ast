@@ -65,6 +65,7 @@ pub fn compare(a: Location, op: std.math.CompareOperator, b: Location) bool {
     };
 }
 
+// zig fmt: off
 pub fn main() void {
     const p = @import("std").debug.print;
     p("{?s}\n", .{std.fs.path.dirname("/")});

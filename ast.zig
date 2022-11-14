@@ -520,14 +520,14 @@ pub const Node = union(enum) {
                     return node;
                 }
             },
-            else => return node
+            else => return node,
         }
     }
 
     pub fn isSingleExpression(node: Node) bool {
         return switch (node) {
             .expressions => |expressions| expressions.isSingleExpression(),
-            else => false
+            else => false,
         };
     }
 };
@@ -573,7 +573,7 @@ pub const Expressions = struct {
     }
 
     pub fn new(allocator: Allocator, expressions: ArrayList(Node)) !Node {
-        return Node { .expressions = try allocate(allocator, expressions) };
+        return Node{ .expressions = try allocate(allocator, expressions) };
     }
 
     pub fn from(allocator: Allocator, obj: anytype) !Node {
@@ -631,7 +631,7 @@ pub const BoolLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, value: bool) !Node {
-        return Node { .bool_literal = try allocate(allocator, value) };
+        return Node{ .bool_literal = try allocate(allocator, value) };
     }
 };
 
@@ -651,18 +651,18 @@ pub const NumberKind = enum {
 
     pub fn bytesize(self: @This()) u8 {
         return switch (self) {
-            .i8   => 8,
-            .i16  => 16,
-            .i32  => 32,
-            .i64  => 64,
+            .i8 => 8,
+            .i16 => 16,
+            .i32 => 32,
+            .i64 => 64,
             .i128 => 128,
-            .u8   => 8,
-            .u16  => 16,
-            .u32  => 32,
-            .u64  => 64,
+            .u8 => 8,
+            .u16 => 16,
+            .u32 => 32,
+            .u64 => 64,
             .u128 => 128,
-            .f32  => 32,
-            .f64  => 64,
+            .f32 => 32,
+            .f64 => 64,
         };
     }
 
@@ -689,18 +689,18 @@ pub const NumberKind = enum {
 
     pub fn fromNumber(number: anytype) @This() {
         switch (@TypeOf(number)) {
-            i8   => return .i8,
-            i16  => return .i16,
-            i32  => return .i32,
-            i64  => return .i64,
+            i8 => return .i8,
+            i16 => return .i16,
+            i32 => return .i32,
+            i64 => return .i64,
             i128 => return .i128,
-            u8   => return .u8,
-            u16  => return .u16,
-            u32  => return .u32,
-            u64  => return .u64,
+            u8 => return .u8,
+            u16 => return .u16,
+            u32 => return .u32,
+            u64 => return .u64,
             u128 => return .u128,
-            f32  => return .f32,
-            f64  => return .f64,
+            f32 => return .f32,
+            f64 => return .f64,
             comptime_int => comptime {
                 if (number >= std.math.minInt(i32) and number <= std.math.maxInt(i32)) return .i32;
                 if (number >= std.math.minInt(i64) and number <= std.math.maxInt(i64)) return .i64;
@@ -720,18 +720,18 @@ pub const NumberKind = enum {
 
     pub fn numberType(self: @This()) type {
         return switch (self) {
-            .i8   => i8,
-            .i16  => i16,
-            .i32  => i32,
-            .i64  => i64,
+            .i8 => i8,
+            .i16 => i16,
+            .i32 => i32,
+            .i64 => i64,
             .i128 => i128,
-            .u8   => u8,
-            .u16  => u16,
-            .u32  => u32,
-            .u64  => u64,
+            .u8 => u8,
+            .u16 => u16,
+            .u32 => u32,
+            .u64 => u64,
             .u128 => u128,
-            .f32  => f32,
-            .f64  => f64,
+            .f32 => f32,
+            .f64 => f64,
         };
     }
 };
@@ -753,7 +753,7 @@ pub const NumberLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, value: anytype) !Node {
-        return Node { .number_literal = try allocate(allocator, value) };
+        return Node{ .number_literal = try allocate(allocator, value) };
     }
 
     pub fn hasSign(self: @This()) bool {
@@ -774,7 +774,7 @@ pub const CharLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, value: u8) !Node {
-        return Node { .char_literal = try allocate(allocator, value) };
+        return Node{ .char_literal = try allocate(allocator, value) };
     }
 };
 
@@ -791,7 +791,7 @@ pub const StringLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, value: []const u8) !Node {
-        return Node { .string_literal = try allocate(allocator, value) };
+        return Node{ .string_literal = try allocate(allocator, value) };
     }
 };
 
@@ -809,7 +809,7 @@ pub const StringInterpolation = struct {
     }
 
     pub fn new(allocator: Allocator, expressions: ArrayList(Node)) !Node {
-        return Node { .string_interpolation = try allocate(allocator, expressions) };
+        return Node{ .string_interpolation = try allocate(allocator, expressions) };
     }
 };
 
@@ -826,7 +826,7 @@ pub const SymbolLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, value: []const u8) !Node {
-        return Node { .symbol_literal = try allocate(allocator, value) };
+        return Node{ .symbol_literal = try allocate(allocator, value) };
     }
 };
 
@@ -845,7 +845,7 @@ pub const ArrayLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, elements: ArrayList(Node)) !Node {
-        return Node { .array_literal = try allocate(allocator, elements) };
+        return Node{ .array_literal = try allocate(allocator, elements) };
     }
 
     pub fn map(allocator: Allocator, values: anytype, block: anytype) !Node {
@@ -882,7 +882,7 @@ pub const HashLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, entries: ArrayList(Entry)) !Node {
-        return Node { .hash_literal = try allocate(allocator, entries) };
+        return Node{ .hash_literal = try allocate(allocator, entries) };
     }
 
     pub const Entry = struct { key: Node, value: Node };
@@ -901,7 +901,7 @@ pub const NamedTupleLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, entries: ArrayList(Entry)) !Node {
-        return Node { .named_tuple_literal = try allocate(allocator, entries) };
+        return Node{ .named_tuple_literal = try allocate(allocator, entries) };
     }
 
     pub const Entry = struct { key: []const u8, value: Node };
@@ -936,7 +936,7 @@ pub const RangeLiteral = struct {
         to: Node,
         is_exclusive: bool,
     ) !Node {
-        return Node { .range_literal = try allocate(allocator, from, to, is_exclusive) };
+        return Node{ .range_literal = try allocate(allocator, from, to, is_exclusive) };
     }
 };
 
@@ -969,7 +969,7 @@ pub const RegexLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, value: Node) !Node {
-        return Node { .regex_literal = try allocate(allocator, value) };
+        return Node{ .regex_literal = try allocate(allocator, value) };
     }
 };
 
@@ -986,7 +986,7 @@ pub const TupleLiteral = struct {
     }
 
     pub fn new(allocator: Allocator, elements: ArrayList(Node)) !Node {
-        return Node { .tuple_literal = try allocate(allocator, elements) };
+        return Node{ .tuple_literal = try allocate(allocator, elements) };
     }
 };
 
@@ -1003,7 +1003,7 @@ pub const Var = struct {
     }
 
     pub fn new(allocator: Allocator, name: []const u8) !Node {
-        return Node { .@"var" = try allocate(allocator, name) };
+        return Node{ .@"var" = try allocate(allocator, name) };
     }
 };
 
@@ -1034,7 +1034,7 @@ pub const Block = struct {
         args: ArrayList(*Var),
         body: ?Node,
     ) !Node {
-        return Node { .block = try allocate(allocator, args, body) };
+        return Node{ .block = try allocate(allocator, args, body) };
     }
 };
 
@@ -1075,7 +1075,7 @@ pub const Call = struct {
         name: []const u8,
         args: ArrayList(Node),
     ) !Node {
-        return Node { .call = try allocate(allocator, obj, name, args) };
+        return Node{ .call = try allocate(allocator, obj, name, args) };
     }
 };
 
@@ -1117,7 +1117,7 @@ pub const If = struct {
         then: ?Node,
         @"else": ?Node,
     ) !Node {
-        return Node { .@"if" = try allocate(allocator, cond, then, @"else") };
+        return Node{ .@"if" = try allocate(allocator, cond, then, @"else") };
     }
 };
 
@@ -1150,7 +1150,7 @@ pub const Unless = struct {
         then: ?Node,
         @"else": ?Node,
     ) !Node {
-        return Node { .unless = try allocate(allocator, cond, then, @"else") };
+        return Node{ .unless = try allocate(allocator, cond, then, @"else") };
     }
 };
 
@@ -1197,7 +1197,7 @@ pub const MultiAssign = struct {
         targets: ArrayList(Node),
         values: ArrayList(Node),
     ) !Node {
-        return Node { .multi_assign = try allocate(allocator, targets, values) };
+        return Node{ .multi_assign = try allocate(allocator, targets, values) };
     }
 };
 
@@ -1330,7 +1330,7 @@ pub const Def = struct {
         args: ArrayList(*Arg),
         body: ?Node,
     ) !Node {
-        return Node { .def = try allocate(allocator, name, args, body) };
+        return Node{ .def = try allocate(allocator, name, args, body) };
     }
 };
 
@@ -1368,7 +1368,7 @@ pub const Macro = struct {
         args: ArrayList(*Arg),
         body: ?Node,
     ) !Node {
-        return Node { .macro = try allocate(allocator, name, args, body) };
+        return Node{ .macro = try allocate(allocator, name, args, body) };
     }
 };
 
@@ -1468,7 +1468,7 @@ pub const When = struct {
         conds: ArrayList(Node),
         body: ?Node,
     ) !Node {
-        return Node { .when = try allocate(allocator, conds, body) };
+        return Node{ .when = try allocate(allocator, conds, body) };
     }
 };
 
@@ -1523,7 +1523,7 @@ pub const Path = struct {
         names: ArrayList([]const u8),
         is_global: bool,
     ) !Node {
-        return Node { .path = try allocate(allocator, names, is_global) };
+        return Node{ .path = try allocate(allocator, names, is_global) };
     }
 };
 
@@ -1559,7 +1559,7 @@ pub const ClassDef = struct {
         name: *Path,
         body: ?Node,
     ) !Node {
-        return Node { .class_def = try allocate(allocator, name, body) };
+        return Node{ .class_def = try allocate(allocator, name, body) };
     }
 };
 
@@ -1592,7 +1592,7 @@ pub const ModuleDef = struct {
         name: *Path,
         body: ?Node,
     ) !Node {
-        return Node { .module_def = try allocate(allocator, name, body) };
+        return Node{ .module_def = try allocate(allocator, name, body) };
     }
 };
 
@@ -1629,7 +1629,7 @@ pub const While = struct {
         cond: Node,
         body: ?Node,
     ) !Node {
-        return Node { .@"while" = try allocate(allocator, cond, body) };
+        return Node{ .@"while" = try allocate(allocator, cond, body) };
     }
 };
 
@@ -1658,7 +1658,7 @@ pub const Until = struct {
         cond: Node,
         body: ?Node,
     ) !Node {
-        return Node { .until = try allocate(allocator, cond, body) };
+        return Node{ .until = try allocate(allocator, cond, body) };
     }
 };
 
@@ -1713,7 +1713,7 @@ pub const Rescue = struct {
     }
 
     pub fn new(allocator: Allocator, body: ?Node) !Node {
-        return Node { .rescue = try allocate(allocator, body) };
+        return Node{ .rescue = try allocate(allocator, body) };
     }
 };
 
@@ -1737,7 +1737,7 @@ pub const ExceptionHandler = struct {
     }
 
     pub fn new(allocator: Allocator, body: ?Node) !Node {
-        return Node { .exception_handler = try allocate(allocator, body) };
+        return Node{ .exception_handler = try allocate(allocator, body) };
     }
 };
 
@@ -1847,7 +1847,7 @@ pub const LibDef = struct {
         name: []const u8,
         body: ?Node,
     ) !Node {
-        return Node { .lib_def = try allocate(allocator, name, body) };
+        return Node{ .lib_def = try allocate(allocator, name, body) };
     }
 };
 
@@ -1898,7 +1898,7 @@ pub const CStructOrUnionDef = struct {
         name: []const u8,
         body: ?Node,
     ) !Node {
-        return Node { .c_struct_or_union_def = try allocate(allocator, name, body) };
+        return Node{ .c_struct_or_union_def = try allocate(allocator, name, body) };
     }
 };
 
@@ -2018,7 +2018,7 @@ pub const MacroIf = struct {
         then: ?Node,
         @"else": ?Node,
     ) !Node {
-        return Node { .macro_if = try allocate(allocator, cond, then, @"else") };
+        return Node{ .macro_if = try allocate(allocator, cond, then, @"else") };
     }
 };
 
@@ -2080,6 +2080,7 @@ pub const Visibility = enum(i8) {
     private,
 };
 
+// zig fmt: off
 pub fn main() !void {
     const p = @import("std").debug.print;
     const assert = @import("std").debug.assert;

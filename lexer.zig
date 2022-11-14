@@ -192,7 +192,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     try lexer.unknownToken();
-                }
+                },
             }
         },
         '\n' => {
@@ -222,7 +222,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_eq_eq;
-                        }
+                        },
                     }
                 },
                 '>' => {
@@ -233,7 +233,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     lexer.token.type = .op_eq;
-                }
+                },
             }
         },
         '!' => {
@@ -246,7 +246,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     lexer.token.type = .op_bang;
-                }
+                },
             }
         },
         '<' => {
@@ -258,7 +258,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_lt_eq;
-                        }
+                        },
                     }
                 },
                 '<' => {
@@ -272,12 +272,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_lt_lt;
-                        }
+                        },
                     }
                 },
                 else => {
                     lexer.token.type = .op_lt;
-                }
+                },
             }
         },
         '>' => {
@@ -292,12 +292,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_gt_gt;
-                        }
+                        },
                     }
                 },
                 else => {
                     lexer.token.type = .op_gt;
-                }
+                },
             }
         },
         '+' => {
@@ -314,7 +314,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     lexer.token.type = .op_plus;
-                }
+                },
             }
         },
         '-' => {
@@ -334,7 +334,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     lexer.token.type = .op_minus;
-                }
+                },
             }
         },
         '*' => {
@@ -349,18 +349,19 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_star_star;
-                        }
+                        },
                     }
                 },
                 else => {
                     lexer.token.type = .op_star;
-                }
+                },
             }
         },
         '/' => {
             const line = lexer.line_number;
             const column = lexer.column_number;
-            _ = line; _ = column; // TODO: clean up Crystal impl
+            _ = line;
+            _ = column; // TODO: clean up Crystal impl
             const char = lexer.nextChar();
             if ((lexer.wants_def_or_macro_name or !lexer.slash_is_regex) and char == '/') {
                 switch (lexer.nextChar()) {
@@ -369,7 +370,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     },
                     else => {
                         lexer.token.type = .op_slash_slash;
-                    }
+                    },
                 }
             } else if (!lexer.slash_is_regex and char == '=') {
                 lexer.skipTokenChar(.op_slash_eq);
@@ -422,7 +423,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 lexer.token.type = .op_percent;
-                            }
+                            },
                         }
                     },
                     'q' => {
@@ -438,7 +439,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 lexer.token.type = .op_percent;
-                            }
+                            },
                         }
                     },
                     'Q' => {
@@ -453,7 +454,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 lexer.token.type = .op_percent;
-                            }
+                            },
                         }
                     },
                     'r' => {
@@ -467,7 +468,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 try lexer.raise("unknown %r char");
-                            }
+                            },
                         }
                     },
                     'x' => {
@@ -481,7 +482,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 try lexer.raise("unknown %x char");
-                            }
+                            },
                         }
                     },
                     'w' => {
@@ -498,7 +499,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 lexer.token.type = .op_percent;
-                            }
+                            },
                         }
                     },
                     '}' => {
@@ -506,7 +507,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     },
                     else => {
                         lexer.token.type = .op_percent;
-                    }
+                    },
                 }
             }
         },
@@ -522,7 +523,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     lexer.token.type = .op_lcurly;
-                }
+                },
             }
         },
         '}' => lexer.skipTokenChar(.op_rcurly),
@@ -538,12 +539,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_lsquare_rsquare;
-                        }
+                        },
                     }
                 },
                 else => {
                     lexer.token.type = .op_lsquare;
-                }
+                },
             }
         },
         ']' => lexer.skipTokenChar(.op_rsquare),
@@ -565,7 +566,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     } else {
                         lexer.token.type = .op_colon;
                     }
-                }
+                },
             }
         },
         '~' => {
@@ -582,7 +583,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_period_period;
-                        }
+                        },
                     }
                 },
                 else => |char| {
@@ -590,7 +591,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         try lexer.raiseAt(".1 style number literal is not supported, put 0 before dot", line, column);
                     }
                     lexer.token.type = .op_period;
-                }
+                },
             }
         },
         '&' => {
@@ -602,7 +603,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_amp_amp;
-                        }
+                        },
                     }
                 },
                 '=' => {
@@ -615,7 +616,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_amp_plus;
-                        }
+                        },
                     }
                 },
                 '-' => {
@@ -631,7 +632,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 lexer.token.type = .op_amp_minus;
-                            }
+                            },
                         }
                     }
                 },
@@ -645,12 +646,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_amp_star;
-                        }
+                        },
                     }
                 },
                 else => {
                     lexer.token.type = .op_amp;
-                }
+                },
             }
         },
         '|' => {
@@ -662,7 +663,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             lexer.token.type = .op_bar_bar;
-                        }
+                        },
                     }
                 },
                 '=' => {
@@ -670,7 +671,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     lexer.token.type = .op_bar;
-                }
+                },
             }
         },
         '^' => {
@@ -680,7 +681,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     lexer.token.type = .op_caret;
-                }
+                },
             }
         },
         '\'' => {
@@ -722,7 +723,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     } else {
                         try lexer.consumeVariable(.instance_var, start);
                     }
-                }
+                },
             }
         },
         '$' => {
@@ -741,7 +742,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         // TODO: backport improvement to Crystal
                         try lexer.consumeVariable(.global, start);
                     }
-                }
+                },
             }
         },
         'a' => {
@@ -772,7 +773,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             return lexer.checkIdentOrKeyword(.as, start);
-                        }
+                        },
                     }
                 },
                 'n' => {
@@ -782,7 +783,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -800,7 +801,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -818,7 +819,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -832,7 +833,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 'o' => return lexer.checkIdentOrKeyword(.do, start),
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -850,12 +851,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                                 },
                                 else => {
                                     // scanIdent
-                                }
+                                },
                             }
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 'n' => {
@@ -875,7 +876,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 'x' => {
@@ -885,7 +886,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -908,7 +909,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -932,7 +933,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 // scanIdent
-                            }
+                            },
                         }
                     } else {
                         lexer.skipChar();
@@ -948,7 +949,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -961,7 +962,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -981,12 +982,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1009,12 +1010,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1037,7 +1038,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1062,12 +1063,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1089,7 +1090,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                                 },
                                 else => {
                                     // scanIdent
-                                }
+                                },
                             }
                         },
                         't' => {
@@ -1104,12 +1105,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1128,7 +1129,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 // scanIdent
-                            }
+                            },
                         }
                     }
                 },
@@ -1149,7 +1150,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1179,7 +1180,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1200,7 +1201,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             },
                             else => {
                                 // scanIdent
-                            }
+                            },
                         }
                     },
                     'l' => {
@@ -1215,7 +1216,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     },
                     else => {
                         // scanIdent
-                    }
+                    },
                 }
             }
             _ = lexer.scanIdent(start);
@@ -1242,7 +1243,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 'i' => {
@@ -1252,7 +1253,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => {
                     // scanIdent
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1305,7 +1306,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         },
                         else => {
                             // scanIdent
-                        }
+                        },
                     }
                 },
                 else => |char| {
@@ -1313,7 +1314,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                         lexer.token.type = .underscore;
                         return lexer.token;
                     }
-                }
+                },
             }
             _ = lexer.scanIdent(start);
         },
@@ -1331,7 +1332,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
             } else {
                 try lexer.unknownToken();
             }
-        }
+        },
     }
 
     if (reset_regex_flags) {
@@ -1406,12 +1407,12 @@ pub fn consumeWhitespace(lexer: *Lexer) !void {
                     },
                     else => {
                         try lexer.unknownToken();
-                    }
+                    },
                 }
             },
             else => {
                 break;
-            }
+            },
         }
     }
     if (lexer.count_whitespace) {
@@ -1447,7 +1448,7 @@ pub fn consumeNewlines(lexer: *Lexer) !void {
             },
             else => {
                 break;
-            }
+            },
         }
     }
 }
@@ -1473,7 +1474,7 @@ pub fn scanIdent(lexer: *Lexer, start: usize) Token {
                 lexer.skipChar();
             }
         },
-        else => {}
+        else => {},
     }
     lexer.token.type = .ident;
     lexer.token.value = .{ .string = lexer.stringRange(start) };
@@ -1649,7 +1650,7 @@ pub fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
                 } else {
                     try lexer.expectedHexadecimalCharacterInUnicodeEscape();
                 }
-            }
+            },
         }
     }
 
@@ -1704,11 +1705,13 @@ pub const nextStringArrayToken = StringLexer.nextStringArrayToken;
 
 pub fn charToHex(char: u8) ?u4 {
     return switch (char) {
+        // zig fmt: off
         '0' => 0, '1' => 1, '2' => 2, '3' => 3, '4' => 4,
         '5' => 5, '6' => 6, '7' => 7, '8' => 8, '9' => 9,
         'a', 'A' => 10, 'b', 'B' => 11, 'c', 'C' => 12,
         'd', 'D' => 13, 'e', 'E' => 14, 'f', 'F' => 15,
-        else => null
+        // zig fmt: on
+        else => null,
     };
 }
 
@@ -1724,7 +1727,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                 switch (lexer.currentChar()) {
                     '"' => break,
                     0 => try lexer.raise("unexpected end of file in loc pragma"),
-                    else => lexer.skipCharNoColumnIncrement()
+                    else => lexer.skipCharNoColumnIncrement(),
                 }
             }
 
@@ -1751,7 +1754,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                     },
                     else => {
                         try lexer.raise("expected digit or ',' in loc pragma for line number");
-                    }
+                    },
                 }
                 lexer.skipChar();
             }
@@ -1768,7 +1771,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                     },
                     else => {
                         try lexer.raise("expected digit or '>' in loc pragma for column_number number");
-                    }
+                    },
                 }
                 lexer.skipChar();
             }
@@ -1810,12 +1813,12 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                 },
                 else => {
                     try lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
-                }
+                },
             }
         },
         else => {
             try lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
-        }
+        },
     }
 }
 
@@ -1917,7 +1920,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                 },
                 else => {
                     try lexer.unknownToken();
-                }
+                },
             }
         },
         '!' => {
@@ -1930,7 +1933,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                 },
                 else => {
                     lexer.symbol("!", start);
-                }
+                },
             }
         },
         '<' => {
@@ -1947,7 +1950,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                 },
                 else => {
                     lexer.symbol("<", start);
-                }
+                },
             }
         },
         '>' => {
@@ -1960,7 +1963,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                 },
                 else => {
                     lexer.symbol(">", start);
-                }
+                },
             }
         },
         '&' => {
@@ -1978,12 +1981,12 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                         },
                         else => {
                             lexer.symbol("&*", start);
-                        }
+                        },
                     }
                 },
                 else => {
                     lexer.symbol("&", start);
-                }
+                },
             }
         },
         '|' => {
@@ -2009,7 +2012,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                     },
                     else => {
                         lexer.symbol("[]", start);
-                    }
+                    },
                 }
             } else {
                 try lexer.unknownToken();
@@ -2032,7 +2035,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                             lexer.skipChar();
                         }
                     },
-                    else => {}
+                    else => {},
                 }
                 lexer.token.type = .symbol;
                 lexer.token.value = .{ .string = lexer.stringRange(start + 1) };
@@ -2040,7 +2043,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
             } else {
                 lexer.token.type = .op_colon;
             }
-        }
+        },
     }
 }
 
@@ -2101,7 +2104,7 @@ fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
                     },
                     else => |char| {
                         try buffer.append(char);
-                    }
+                    },
                 }
             },
             '"' => {
@@ -2115,7 +2118,7 @@ fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
                 // if (found_escape) {
                 //     try buffer.append(char);
                 // }
-            }
+            },
         }
     }
 
@@ -2185,7 +2188,7 @@ fn consumeCharLiteral(lexer: *Lexer) !void {
                         .{char},
                     );
                     try lexer.raiseAt(message, line, column);
-                }
+                },
             }
         },
         '\'' => {
@@ -2196,7 +2199,7 @@ fn consumeCharLiteral(lexer: *Lexer) !void {
         },
         else => |char| {
             lexer.token.value = .{ .char = char };
-        }
+        },
     }
     if (lexer.nextChar() != '\'') {
         try lexer.raiseAt("unterminated char literal, use double quotes for strings", line, column);
@@ -2415,7 +2418,7 @@ pub fn closingChar(char: u8) u8 {
         '(' => ')',
         '[' => ']',
         '{' => '}',
-        else => char
+        else => char,
     };
 }
 
@@ -2429,7 +2432,7 @@ pub fn skipSpaceOrNewline(lexer: *Lexer) !void {
     while (true) {
         switch (lexer.token.type) {
             .space, .newline => _ = try lexer.nextToken(),
-            else => break
+            else => break,
         }
     }
 }
@@ -2442,7 +2445,7 @@ pub fn skipStatementEnd(lexer: *Lexer) !void {
             },
             else => {
                 break;
-            }
+            },
         }
     }
 }
@@ -2478,7 +2481,7 @@ pub fn unknownToken(lexer: *Lexer) !void {
                 .{std.fmt.fmtSliceEscapeUpper(&[1]u8{c})},
             );
             try lexer.raise(message);
-        }
+        },
     }
 }
 
@@ -2503,7 +2506,9 @@ pub fn raiseAt(
     column_number: usize,
 ) !void {
     lexer.error_message = message;
+    // zig fmt: off
     _ = line_number; _ = column_number; // TODO
+    // zig fmt: on
     return error.SyntaxError;
 }
 
@@ -2546,7 +2551,7 @@ const MacroLexer = struct {
     fn checkMacroOpeningKeyword(lexer: *Lexer, beginning_of_line: bool, is_abstract_def: *bool) bool {
         switch (lexer.currentChar()) {
             'a' => {
-                switch(lexer.nextChar()) {
+                switch (lexer.nextChar()) {
                     'b' => {
                         if (lexer.charSequence("stract") and std.ascii.isWhitespace(lexer.nextChar())) {
                             switch (lexer.nextChar()) {
@@ -2564,7 +2569,7 @@ const MacroLexer = struct {
                                 },
                                 else => {
                                     return false;
-                                }
+                                },
                             }
                         }
                     },
@@ -2573,14 +2578,14 @@ const MacroLexer = struct {
                     },
                     else => {
                         return false;
-                    }
+                    },
                 }
             },
             'b' => {
                 return lexer.charSequence("egin") and lexer.peekNotIdentPartOrEndNextChar();
             },
             'c' => {
-                switch(lexer.nextChar()) {
+                switch (lexer.nextChar()) {
                     'a' => {
                         return lexer.charSequence("se") and lexer.peekNotIdentPartOrEndNextChar();
                     },
@@ -2589,11 +2594,11 @@ const MacroLexer = struct {
                     },
                     else => {
                         return false;
-                    }
+                    },
                 }
             },
             'd' => {
-                switch(lexer.nextChar()) {
+                switch (lexer.nextChar()) {
                     'o' => {
                         return lexer.peekNotIdentPartOrEndNextChar();
                     },
@@ -2602,7 +2607,7 @@ const MacroLexer = struct {
                     },
                     else => {
                         return false;
-                    }
+                    },
                 }
             },
             'f' => {
@@ -2615,7 +2620,7 @@ const MacroLexer = struct {
                 return lexer.charSequence("ib") and lexer.peekNotIdentPartOrEndNextChar();
             },
             'm' => {
-                switch(lexer.nextChar()) {
+                switch (lexer.nextChar()) {
                     'a' => {
                         return lexer.charSequence("cro") and lexer.peekNotIdentPartOrEndNextChar();
                     },
@@ -2624,11 +2629,11 @@ const MacroLexer = struct {
                     },
                     else => {
                         return false;
-                    }
+                    },
                 }
             },
             's' => {
-                switch(lexer.nextChar()) {
+                switch (lexer.nextChar()) {
                     'e' => {
                         return lexer.charSequence("lect") and lexer.peekNotIdentPartOrEndNextChar();
                     },
@@ -2637,12 +2642,12 @@ const MacroLexer = struct {
                     },
                     else => {
                         return false;
-                    }
+                    },
                 }
             },
             'u' => {
                 if (lexer.nextChar() == 'n') {
-                    switch(lexer.nextChar()) {
+                    switch (lexer.nextChar()) {
                         'i' => {
                             return lexer.charSequence("on") and lexer.peekNotIdentPartOrEndNextChar();
                         },
@@ -2654,7 +2659,7 @@ const MacroLexer = struct {
                         },
                         else => {
                             return false;
-                        }
+                        },
                     }
                 }
             },
@@ -2663,7 +2668,7 @@ const MacroLexer = struct {
             },
             else => {
                 return false;
-            }
+            },
         }
         return false;
     }
@@ -2819,6 +2824,7 @@ const StringLexer = struct {
     }
 };
 
+// zig fmt: off
 pub fn main() !void {
     // const p = @import("std").debug.print;
     const p = struct {

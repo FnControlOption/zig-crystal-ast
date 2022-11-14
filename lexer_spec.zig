@@ -69,6 +69,7 @@ fn expectOperator(string: []const u8, token_type: Token.Kind) !void {
     try testing.expectEqual(token_type, token.type);
 }
 
+// zig fmt: off
 test "eof" { try expectTokenType("", .eof); }
 test "space" { try expectTokenType(" ", .space); }
 test "tab" { try expectTokenType("\t", .space); }
