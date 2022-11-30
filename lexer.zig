@@ -267,8 +267,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                             lexer.skipTokenChar(.op_lt_lt_eq);
                         },
                         '-' => {
-                            // TODO: refactor Crystal implementation
-                            try lexer.consumeHeredocStart(start);
+                            try lexer.consumeHeredocStart();
                         },
                         else => {
                             lexer.token.type = .op_lt_lt;
@@ -358,10 +357,6 @@ pub fn _nextToken(lexer: *Lexer) !Token {
             }
         },
         '/' => {
-            const line = lexer.line_number;
-            const column = lexer.column_number;
-            _ = line;
-            _ = column; // TODO: clean up Crystal impl
             const char = lexer.nextChar();
             if ((lexer.wants_def_or_macro_name or !lexer.slash_is_regex) and char == '/') {
                 switch (lexer.nextChar()) {
@@ -537,18 +532,12 @@ pub fn _nextToken(lexer: *Lexer) !Token {
             lexer.skipTokenChar(.op_semicolon);
         },
         ':' => {
-            switch (lexer.nextChar()) {
-                ':' => {
-                    lexer.skipTokenChar(.op_colon_colon);
-                },
-                else => |char| {
-                    if (lexer.wants_symbol) {
-                        // TODO: backport this additional parameter to Crystal?
-                        try lexer.consumeSymbol(char, start);
-                    } else {
-                        lexer.token.type = .op_colon;
-                    }
-                },
+            if (lexer.nextChar() == ':') {
+                lexer.skipTokenChar(.op_colon_colon);
+            } else if (lexer.wants_symbol) {
+                try lexer.consumeSymbol();
+            } else {
+                lexer.token.type = .op_colon;
             }
         },
         '~' => {
@@ -671,8 +660,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
         },
         '`' => {
             if (lexer.wants_def_or_macro_name) {
-                lexer.skipChar();
-                lexer.token.type = .op_grave;
+                lexer.skipTokenChar(.op_grave);
             } else {
                 lexer.delimiterStart(.{
                     .delimiters = Token.Delimiters.of(.command, '`', '`'),
@@ -693,14 +681,13 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 '[' => {
                     lexer.skipTokenChar(.op_at_lsquare);
                 },
-                else => |char| {
-                    // TODO: backport improvement to Crystal
-                    if (char == '@') {
-                        lexer.skipChar();
-                        try lexer.consumeVariable(.class_var, start);
-                    } else {
-                        try lexer.consumeVariable(.instance_var, start);
-                    }
+                // TODO: backport improvement to Crystal
+                '@' => {
+                    lexer.skipChar();
+                    try lexer.consumeVariable(.class_var, start);
+                },
+                else => {
+                    try lexer.consumeVariable(.instance_var, start);
                 },
             }
         },
@@ -715,9 +702,9 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => |char| {
                     if (std.ascii.isDigit(char)) {
+                        // TODO: add method to Crystal impl?
                         lexer.consumeGlobalMatchDataIndex();
                     } else {
-                        // TODO: backport improvement to Crystal
                         try lexer.consumeVariable(.global, start);
                     }
                 },
@@ -1798,7 +1785,9 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
     }
 }
 
-fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
+fn consumeHeredocStart(lexer: *Lexer) !void {
+    const start = lexer.current_pos - 2;
+
     var has_single_quote = false;
     var found_closing_single_quote = false;
 
@@ -1858,8 +1847,9 @@ fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
     }, start);
 }
 
-fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
-    switch (first_char) {
+fn consumeSymbol(lexer: *Lexer) !void {
+    const start = lexer.current_pos - 1;
+    switch (lexer.currentChar()) {
         '+' => {
             lexer.skipSymbolChar("+", start);
         },
@@ -3078,7 +3068,7 @@ pub fn main() !void {
         op("]", .op_rsquare),
         op("^", .op_caret),
         op("^=", .op_caret_eq),
-        // op("`", .op_grave),
+        op("`", .op_grave),
         op("{", .op_lcurly),
         op("{%", .op_lcurly_percent),
         op("{{", .op_lcurly_lcurly),
@@ -3090,7 +3080,8 @@ pub fn main() !void {
         op("~", .op_tilde),
     }) |o| {
         lexer = Lexer.new(o.string);
-        lexer.wants_symbol = false; // for op_colon
+        if (o.token_type == .op_colon) lexer.wants_symbol = false;
+        if (o.token_type == .op_grave) lexer.wants_def_or_macro_name = true;
         token = try lexer.nextToken();
         assert(token.type == o.token_type);
         // p("{}\n", .{token.type});
@@ -3230,17 +3221,21 @@ pub fn main() !void {
     if (lexer.nextToken()) |_| unreachable else |err| p("{} {?s}\n", .{err, lexer.error_message});
 
     lexer = Lexer.new("<<-EOS,");
+    lexer.wants_raw = true;
     token = try lexer.nextToken();
     assert(token.type == .delimiter_start);
     assert(token.delimiter_state.delimiters == .heredoc);
-    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
+    assert(std.mem.eql(u8, token.raw, "<<-EOS"));
     assert(std.mem.eql(u8, "EOS", token.delimiter_state.delimiters.heredoc));
 
     lexer = Lexer.new("<<-'FOO BAR'");
+    lexer.wants_raw = true;
     token = try lexer.nextToken();
     assert(token.type == .delimiter_start);
     assert(token.delimiter_state.delimiters == .heredoc);
-    p("{} {}\n", .{token.type, token.delimiter_state.delimiters});
+    p("{} {} {s}\n", .{token.type, token.delimiter_state.delimiters, token.raw});
+    assert(std.mem.eql(u8, token.raw, "<<-'FOO BAR'"));
     assert(std.mem.eql(u8, "FOO BAR", token.delimiter_state.delimiters.heredoc));
 
     lexer = Lexer.new("//");
