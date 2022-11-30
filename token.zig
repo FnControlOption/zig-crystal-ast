@@ -323,7 +323,7 @@ pub const Kind = enum {
 
 pub const Value = union(enum) {
     char: u8,
-    utf8: []const u8,
+    // utf8: []const u8,
     string: []const u8,
     keyword: Keyword,
     nil,
@@ -454,7 +454,7 @@ pub fn isKeyword(token: Token, keyword: Keyword) bool {
 pub fn toString(token: Token, writer: anytype) !void {
     return switch (token.value) {
         .char => |char| writer.writeByte(char),
-        .utf8 => |encoded| writer.writeAll(encoded),
+        // .utf8 => |encoded| writer.writeAll(encoded),
         .string => |string| writer.writeAll(string),
         .keyword => |keyword| writer.writeAll(keyword.toString()),
         .nil => writer.writeAll(token.type.toString()),

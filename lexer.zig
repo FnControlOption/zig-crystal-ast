@@ -2136,11 +2136,12 @@ fn consumeCharLiteral(lexer: *Lexer) !void {
                     lexer.token.value = .{ .char = std.ascii.control_code.vt }; // '\v'
                 },
                 'u' => {
-                    const codepoint = try lexer.consumeCharUnicodeEscape();
-                    var buf: [4]u8 = undefined;
-                    const length = try std.unicode.utf8Encode(codepoint, &buf);
-                    const encoded = buf[0..length];
-                    lexer.token.value = .{ .utf8 = try lexer.allocator.dupe(u8, encoded) };
+                    // const codepoint = try lexer.consumeCharUnicodeEscape();
+                    // var buf: [4]u8 = undefined;
+                    // const length = try std.unicode.utf8Encode(codepoint, &buf);
+                    // const encoded = buf[0..length];
+                    // lexer.token.value = .{ .utf8 = try lexer.allocator.dupe(u8, encoded) };
+                    return lexer.raiseAt("unicode char is unsupported", line, column);
                 },
                 '0' => {
                     lexer.token.value = .{ .char = std.ascii.control_code.nul }; // '\0'
@@ -3150,16 +3151,16 @@ pub fn main() !void {
     // p("{any}\n", .{"あ"});
 
     // consumeCharUnicodeEscape
-    for ([_][]const u8{
-        "'\\u0041'", "'\\u0157'", "'\\u3042'", "'\\u{1F0DF}'"
-    }) |s| {
-        lexer = Lexer.new(s);
-        lexer.wants_raw = true;
-        token = try lexer.nextToken();
-        assert(token.type == .char);
-        assert(token.value == .utf8);
-        p("{} {s} {s} {any} {}\n", .{token.type, token.value.utf8, token.raw, token.value.utf8, @as(std.meta.Tag(Token.Value), token.value)});
-    }
+    // for ([_][]const u8{
+    //     "'\\u0041'", "'\\u0157'", "'\\u3042'", "'\\u{1F0DF}'"
+    // }) |s| {
+    //     lexer = Lexer.new(s);
+    //     lexer.wants_raw = true;
+    //     token = try lexer.nextToken();
+    //     assert(token.type == .char);
+    //     assert(token.value == .utf8);
+    //     p("{} {s} {s} {any} {}\n", .{token.type, token.value.utf8, token.raw, token.value.utf8, @as(std.meta.Tag(Token.Value), token.value)});
+    // }
 
     // consumeSymbol
     var it = std.mem.tokenize(u8,
