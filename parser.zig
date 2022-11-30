@@ -149,7 +149,7 @@ stop_on_do: bool = false,
 assigned_vars: ArrayList([]const u8),
 
 fn new(string: []const u8) !Parser {
-    const allocator = std.heap.page_allocator; // TODO
+    const allocator = std.heap.page_allocator; // TODO: use ArenaAllocator
     return init(allocator, string);
 }
 
@@ -394,11 +394,7 @@ pub fn parseRespondsToName(parser: *Parser) ![]const u8 {
         return parser.unexpectedTokenMsg("expected symbol");
     }
 
-    return switch (lexer.token.value) {
-        .string => |string| string,
-        .buffer => |buffer| buffer.items,
-        else => unreachable,
-    };
+    return lexer.token.value.string;
 }
 
 // parseNilQuestion
@@ -492,7 +488,7 @@ pub fn parseStringOrSymbolArray(
         _ = try lexer.nextStringArrayToken();
         switch (lexer.token.type) {
             .string => {
-                const value = lexer.token.value.buffer.items;
+                const value = lexer.token.value.string;
                 const string = try StringOrSymbolLiteral.new(allocator, value);
                 try strings.append(string);
             },

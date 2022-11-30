@@ -325,7 +325,6 @@ pub const Value = union(enum) {
     char: u8,
     utf8: []const u8,
     string: []const u8,
-    buffer: ArrayList(u8),
     keyword: Keyword,
     nil,
 };
@@ -457,7 +456,6 @@ pub fn toString(token: Token, writer: anytype) !void {
         .char => |char| writer.writeByte(char),
         .utf8 => |encoded| writer.writeAll(encoded),
         .string => |string| writer.writeAll(string),
-        .buffer => |buffer| writer.writeAll(buffer.items),
         .keyword => |keyword| writer.writeAll(keyword.toString()),
         .nil => writer.writeAll(token.type.toString()),
     };

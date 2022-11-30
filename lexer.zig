@@ -57,7 +57,7 @@ pub const Heredoc = struct {
 };
 
 fn new(string: []const u8) Lexer {
-    const allocator = std.heap.page_allocator; // TODO
+    const allocator = std.heap.page_allocator; // TODO: use ArenaAllocator
     return init(allocator, string);
 }
 
@@ -2087,9 +2087,9 @@ fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
     }
 
     lexer.token.type = .symbol;
-    lexer.token.value = .{ .buffer = buffer };
+    lexer.token.value = .{ .string = buffer.items };
     // if (found_escape) {
-    //     lexer.token.value = .{ .buffer = buffer };
+    //     lexer.token.value = .{ .string = buffer.items };
     // } else {
     //     lexer.token.value = .{ .string = lexer.stringRange(start + 2) };
     // }
@@ -2743,7 +2743,7 @@ const StringLexer = struct {
 
         const start = lexer.current_pos;
         var sub_start = start;
-        var value = ArrayList(u8).init(lexer.allocator);
+        var buffer = ArrayList(u8).init(lexer.allocator);
 
         var escaped = false;
         while (true) {
@@ -2765,12 +2765,12 @@ const StringLexer = struct {
             } else if (std.ascii.isWhitespace(char)) {
                 if (!escaped) break;
             } else if (escaped) {
-                try value.append('\\');
+                try buffer.append('\\');
             }
 
             escaped = lexer.currentChar() == '\\';
             if (escaped) {
-                try value.appendSlice(lexer.stringRange2(sub_start, lexer.current_pos));
+                try buffer.appendSlice(lexer.stringRange2(sub_start, lexer.current_pos));
                 sub_start = lexer.current_pos + 1;
             }
 
@@ -2782,10 +2782,10 @@ const StringLexer = struct {
             return lexer.token;
         }
 
-        try value.appendSlice(lexer.stringRange2(sub_start, lexer.current_pos));
+        try buffer.appendSlice(lexer.stringRange2(sub_start, lexer.current_pos));
 
         lexer.token.type = .string;
-        lexer.token.value = .{ .buffer = value };
+        lexer.token.value = .{ .string = buffer.items };
         lexer.setTokenRawFromStart(start);
 
         return lexer.token;
@@ -3194,9 +3194,9 @@ pub fn main() !void {
     lexer = Lexer.new(":\"a\\z\\123\\\n\\xFF\\u3042\\u{1F0DF}\"");
     token = try lexer.nextToken();
     assert(token.type == .symbol);
-    assert(token.value == .buffer);
-    p("{} {s}\n", .{token.type, escape(token.value.buffer.items)});
-    assert(std.mem.eql(u8, "azS\n\xFFあ🃟", token.value.buffer.items));
+    assert(token.value == .string);
+    p("{} {s}\n", .{token.type, escape(token.value.string)});
+    assert(std.mem.eql(u8, "azS\n\xFFあ🃟", token.value.string));
 
     lexer = Lexer.new("\"");
     token = try lexer.nextToken();
@@ -3446,13 +3446,13 @@ pub fn main() !void {
     token = try lexer.nextStringArrayToken();
     assert(token.type == .string);
     assert(std.mem.eql(u8, token.raw, "foo"));
-    assert(token.value == .buffer);
-    assert(std.mem.eql(u8, token.value.buffer.items, "foo"));
+    assert(token.value == .string);
+    assert(std.mem.eql(u8, token.value.string, "foo"));
     token = try lexer.nextStringArrayToken();
     assert(token.type == .string);
     assert(std.mem.eql(u8, token.raw, "bar"));
-    assert(token.value == .buffer);
-    assert(std.mem.eql(u8, token.value.buffer.items, "bar"));
+    assert(token.value == .string);
+    assert(std.mem.eql(u8, token.value.string, "bar"));
     token = try lexer.nextStringArrayToken();
     assert(token.type == .string_array_end);
     assert(std.mem.eql(u8, token.raw, ")"));
