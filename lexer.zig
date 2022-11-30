@@ -2306,18 +2306,22 @@ pub fn resetToken(lexer: *Lexer) void {
     lexer._token_end_location = null;
 }
 
-pub fn skipTokenAndSpace(lexer: *Lexer) !void {
+pub inline fn skipToken(lexer: *Lexer) !void {
     _ = try lexer.nextToken();
+}
+
+pub fn skipTokenAndSpace(lexer: *Lexer) !void {
+    try lexer.skipToken();
     try lexer.skipSpace();
 }
 
 pub fn skipTokenAndSpaceOrNewline(lexer: *Lexer) !void {
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     try lexer.skipSpaceOrNewline();
 }
 
 pub fn skipTokenAndStatementEnd(lexer: *Lexer) !void {
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     try lexer.skipStatementEnd();
 }
 
@@ -2391,7 +2395,7 @@ pub fn closingChar(char: u8) u8 {
 
 pub fn skipSpace(lexer: *Lexer) !void {
     while (lexer.token.type == .space) {
-        _ = try lexer.nextToken();
+        try lexer.skipToken();
     }
 }
 
@@ -2408,7 +2412,7 @@ pub fn skipStatementEnd(lexer: *Lexer) !void {
     while (true) {
         switch (lexer.token.type) {
             .space, .newline, .op_semicolon => {
-                _ = try lexer.nextToken();
+                try lexer.skipToken();
             },
             else => {
                 break;

@@ -493,7 +493,7 @@ pub fn parseStringOrSymbolArray(
                 try strings.append(string);
             },
             .string_array_end => {
-                _ = try lexer.nextToken();
+                try lexer.skipToken();
                 break;
             },
             else => {
@@ -514,7 +514,21 @@ pub fn parseStringOrSymbolArray(
     });
 }
 
-// parseEmptyArrayLiteral
+// pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
+//     const lexer = &parser.lexer;
+//     const line = lexer.line_number;
+//     const column = lexer.token.column_number;
+//
+//     try lexer.skipTokenAndSpace();
+//     if (lexer.token.isKeyword(.of)) {
+//         try lexer.skipTokenAndSpaceOrNewline();
+//         const of =
+//     } else {
+//         return lexer.raiseAt("for empty arrays use '[] of ElementType'", line, column);
+//     }
+// }
+
+// parseArrayLiteral
 // parseHashOrTupleLiteral
 // parseHashLiteral
 // atNamedTupleStart
@@ -625,14 +639,14 @@ pub fn parsePath2(
     var end_location = lexer.tokenEndLocation();
 
     lexer.wants_regex = false;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     while (lexer.token.type == .op_colon_colon) {
         try lexer.skipTokenAndSpaceOrNewline();
         try names.append(try parser.checkConst());
         end_location = lexer.tokenEndLocation();
 
         lexer.wants_regex = false;
-        _ = try lexer.nextToken();
+        try lexer.skipToken();
     }
 
     var node = try Path.new(allocator, names, is_global);
@@ -770,7 +784,7 @@ pub fn parsePath2(
 pub fn nodeAndNextToken(parser: *Parser, node: Node) !Node {
     const lexer = &parser.lexer;
     node.setEndLocation(lexer.tokenEndLocation());
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     return node;
 }
 
@@ -844,7 +858,7 @@ pub fn consumeDefOrMacroName(parser: *Parser) ![]const u8 {
 
 pub fn consumeDefEqualsSignSkipSpace(parser: *Parser) !bool {
     const lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     if (lexer.token.type == .op_eq) {
         try lexer.skipTokenAndSpace();
         return true;
@@ -1184,7 +1198,7 @@ pub fn main() !void {
 
     parser = try Parser.new("foo.bar");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     var token_end_location = lexer.tokenEndLocation();
     var node0 = try Var.new(parser.allocator, "foo");
     var node = try parser.nodeAndNextToken(node0);
@@ -1194,27 +1208,27 @@ pub fn main() !void {
 
     parser = try Parser.new("Foo");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     assert(std.mem.eql(u8, "Foo", try parser.checkConst()));
 
     parser = try Parser.new("foo");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     assert(std.mem.eql(u8, "foo", try parser.checkIdent()));
 
     parser = try Parser.new("type");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     assert(std.mem.eql(u8, "type", try parser.checkIdent()));
 
     parser = try Parser.new("type");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     try parser.checkIdentKeyword(.type);
 
     parser = try Parser.new("foo");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     if (parser.checkIdentKeyword(.fun)) |_| unreachable else |err| {
         assert(err == error.SyntaxError);
         assert(std.mem.eql(u8, lexer.error_message.?, blk: {
@@ -1225,7 +1239,7 @@ pub fn main() !void {
     parser = try Parser.new("break : ");
     parser.no_type_declaration = 0;
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     if (parser.checkVoidExpressionKeyword()) |_| unreachable else |err| {
         assert(err == error.SyntaxError);
         assert(std.mem.eql(u8, lexer.error_message.?, blk: {
@@ -1236,7 +1250,7 @@ pub fn main() !void {
     parser = try Parser.new("break : ");
     parser.no_type_declaration = 1;
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     _ = try parser.checkVoidExpressionKeyword();
 
     if (parser.checkVoidValue(
@@ -1251,7 +1265,7 @@ pub fn main() !void {
 
     parser = try Parser.new("foo");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     try parser.open("fizz");
     assert(parser.unexpectedTokenInAtomic() == error.SyntaxError);
     assert(std.mem.eql(u8, lexer.error_message.?, blk: {
@@ -1273,7 +1287,7 @@ pub fn main() !void {
 
     parser = try Parser.new("::Foo::Bar::Baz");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     node = try parser.parsePath();
     assert(node.path.is_global);
     assert(
@@ -1289,12 +1303,12 @@ pub fn main() !void {
 
     parser = try Parser.new(":foo");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     assert(std.mem.eql(u8, "foo", try parser.parseRespondsToName()));
 
     parser = try Parser.new("%i(foo bar)");
     lexer = &parser.lexer;
-    _ = try lexer.nextToken();
+    try lexer.skipToken();
     node = try parser.parseSymbolArray();
     assert(node == .array_literal);
     var elements = node.array_literal.elements.items;
