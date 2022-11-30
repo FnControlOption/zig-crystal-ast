@@ -467,35 +467,63 @@ pub const ArrayLiteral = struct {
     end_location: ?Location = null,
 
     elements: ArrayList(Node),
-    of: ?Node = null,
-    name: ?Node = null,
+    of: ?Node,
+    name: ?Node,
 
-    pub fn allocate(allocator: Allocator, elements: ArrayList(Node)) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        elements: ArrayList(Node),
+        args: struct {
+            of: ?Node = null,
+            name: ?Node = null,
+        },
+    ) !*@This() {
         var instance = try allocator.create(@This());
-        instance.* = .{ .elements = elements };
+        instance.* = .{
+            .elements = elements,
+            .of = args.of,
+            .name = args.name,
+        };
         return instance;
     }
 
-    pub fn new(allocator: Allocator, elements: ArrayList(Node)) !Node {
-        return Node{ .array_literal = try allocate(allocator, elements) };
+    pub fn new(
+        allocator: Allocator,
+        elements: ArrayList(Node),
+        args: anytype,
+    ) !Node {
+        return Node{
+            .array_literal = try allocate(allocator, elements, args),
+        };
     }
 
-    pub fn map(allocator: Allocator, values: anytype, block: anytype) !Node {
+    pub fn map(
+        allocator: Allocator,
+        values: anytype,
+        args: struct {
+            of: ?Node = null,
+        },
+        block: anytype,
+    ) !Node {
         // TODO: validate values and block
         var new_values = try ArrayList(Node).initCapacity(allocator, values.items.len);
         for (values.items) |value| {
             new_values.appendAssumeCapacity(try block(allocator, value));
         }
-        return new(allocator, new_values);
+        return new(allocator, new_values, .{ .of = args.of });
     }
 
-    pub fn mapWithIndex(allocator: Allocator, values: anytype, block: anytype) !Node {
+    pub fn mapWithIndex(
+        allocator: Allocator,
+        values: anytype,
+        block: anytype,
+    ) !Node {
         // TODO: validate values and block
         var new_values = try ArrayList(Node).initCapacity(allocator, values.items.len);
         for (values.items) |value, index| {
             new_values.appendAssumeCapacity(try block(allocator, value, index));
         }
-        return new(allocator, new_values);
+        return new(allocator, new_values, .{ .of = null });
     }
 };
 
@@ -1157,6 +1185,13 @@ pub const Path = struct {
     ) !Node {
         return Node{ .path = try allocate(allocator, names, is_global) };
     }
+
+    pub fn global(
+        allocator: Allocator,
+        names: ArrayList([]const u8),
+    ) !Node {
+        return new(allocator, names, true);
+    }
 };
 
 pub const ClassDef = struct {
@@ -1714,7 +1749,13 @@ pub const Visibility = enum(i8) {
 
 // zig fmt: off
 pub fn main() !void {
-    const p = @import("std").debug.print;
+    // const p = @import("std").debug.print;
+    const p = struct {
+        fn f(fmt: []const u8, args: anytype) void {
+            _ = fmt;
+            _ = args;
+        }
+    }.f;
     const assert = @import("std").debug.assert;
     const allocator = std.heap.page_allocator;
 
@@ -1834,8 +1875,8 @@ pub fn main() !void {
         var values = ArrayList(Node).init(allocator);
         try values.append(try BoolLiteral.new(allocator, true));
         try values.append(try BoolLiteral.new(allocator, false));
-        const array = try ArrayLiteral.new(allocator, values);
-        const array2 = try ArrayLiteral.map(allocator, values, struct {
+        const array = try ArrayLiteral.new(allocator, values, .{});
+        const array2 = try ArrayLiteral.map(allocator, values, .{}, struct {
             fn f(_: Allocator, node: Node) !Node {
                 return try BoolLiteral.new(allocator, !node.bool_literal.value);
             }

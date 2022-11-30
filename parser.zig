@@ -112,7 +112,7 @@ const Unclosed = struct {
     name: []const u8,
     location: Location,
 
-    fn new(name: []const u8, location: Location) Unclosed {
+    fn init(name: []const u8, location: Location) Unclosed {
         return .{ .name = name, .location = location };
     }
 };
@@ -166,197 +166,197 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
     return parser;
 }
 
-pub fn parse(parser: *Parser) !Node {
-    const lexer = &parser.lexer;
-    try lexer.skipTokenAndStatementEnd();
-
-    const value = try parser.parseExpressions();
-    try parser.check(.eof);
-    return value;
-}
+// pub fn parse(parser: *Parser) !Node {
+//     const lexer = &parser.lexer;
+//     try lexer.skipTokenAndStatementEnd();
+//
+//     const value = try parser.parseExpressions();
+//     try parser.check(.eof);
+//     return value;
+// }
 
 // parse(mode: ParseMode)
 
-pub fn parseExpressions(parser: *Parser) !Node {
-    const old_stop_on_do = parser.pushStopOnDo(false);
-    defer parser.resetStopOnDo(old_stop_on_do);
-    return parser.parseExpressionsInternal();
-}
+// pub fn parseExpressions(parser: *Parser) !Node {
+//     const old_stop_on_do = parser.pushStopOnDo(false);
+//     defer parser.resetStopOnDo(old_stop_on_do);
+//     return parser.parseExpressionsInternal();
+// }
 
-pub fn parseExpressionsInternal(parser: *Parser) !Node {
-    if (parser.isEndToken()) {
-        return Nop.new(parser.allocator);
-    }
+// pub fn parseExpressionsInternal(parser: *Parser) !Node {
+//     if (parser.isEndToken()) {
+//         return Nop.new(parser.allocator);
+//     }
+//
+//     const exp = try parser.parseMultiAssign();
+//
+//     const lexer = &parser.lexer;
+//     lexer.slash_is_regex = true;
+//     try lexer.skipStatementEnd();
+//
+//     if (parser.isEndToken()) {
+//         return exp;
+//     }
+//
+//     var exps = ArrayList(Node).init(parser.allocator);
+//     try exps.append(exp);
+//
+//     while (true) {
+//         try exps.append(try parser.parseMultiAssign());
+//         try lexer.skipStatementEnd();
+//         if (parser.isEndToken()) break;
+//     }
+//
+//     return Expressions.from(parser.allocator, exps);
+// }
 
-    const exp = try parser.parseMultiAssign();
+// pub fn parseMultiAssign(parser: *Parser) !Node {
+//     const lexer = &parser.lexer;
+//     const location = lexer.token.location();
+//
+//     var lhs_splat_index: ?usize = null;
+//     if (lexer.token.type == .op_star) {
+//         lhs_splat_index = 0;
+//         try lexer.skipTokenAndSpace();
+//     }
+//
+//     var last = try parser.parseExpression();
+//     try lexer.skipSpace();
+//
+//     const last_is_target = isMultiAssignTarget(last);
+//
+//     switch (lexer.token.type) {
+//         .op_comma => {
+//             _ = last_is_target;
+//             return error.Unimplemented;
+//         },
+//         .newline, .op_semicolon => {
+//             return error.Unimplemented;
+//         },
+//         else => {
+//             return error.Unimplemented;
+//         },
+//     }
+//
+//     var exps = ArrayList(Node).init(parser.allocator);
+//     try exps.append(last);
+//
+//     var i: usize = 0;
+//     var possible_assign_index: ?usize = null;
+//
+//     while (lexer.token.type == .op_comma) {
+//         return error.Unimplemented;
+//     }
+//
+//     if (possible_assign_index == null and isMultiAssignMiddle(last)) {
+//         possible_assign_index = i;
+//     }
+//
+//     if (possible_assign_index) |assign_index| {
+//         var targets = ArrayList(Node).initCapacity(parser.allocator, assign_index);
+//         var target_index: usize = 0;
+//         while (target_index < assign_index) : (target_index += 1) {
+//             const exp = exps.items[target_index];
+//             targets.append(parser.multiassignLeftHand(exp));
+//         }
+//
+//         var assign_exp = exps.items[assign_index];
+//         var values = ArrayList(Node).init(parser.allocator);
+//
+//         switch (assign_exp) {
+//             .assign => |assign| {
+//                 targets.append(parser.multiassignLeftHand(assign.target));
+//                 values.append(assign.value);
+//             },
+//             .call => |*call| {
+//                 call.name = call.name[0 .. call.name.len - 1];
+//                 targets.append(assign_exp);
+//                 values.append(call.args.pop());
+//             },
+//             else => {
+//                 return lexer.raise("BUG: multiassign index expression can only be Assign or Call");
+//             },
+//         }
+//
+//         values.appendSlice(exps.items[assign_index + 1 ..]);
+//         if (values.items.len != 1) {
+//             if (lhs_splat_index) {
+//                 if (targets.items.len - 1 > values.items.len) {
+//                     return lexer.raiseLoc("Multiple assignment count mismatch", location);
+//                 }
+//             } else {
+//                 if (targets.items.len != values.items.len) {
+//                     return lexer.raiseLoc("Multiple assignment count mismatch", location);
+//                 }
+//             }
+//         }
+//
+//         var multi = MultiAssign.new(targets, values);
+//         multi.setLocation(location);
+//         return error.Unimplemented;
+//     } else {
+//         return parser.unexpectedToken();
+//     }
+// }
 
-    const lexer = &parser.lexer;
-    lexer.slash_is_regex = true;
-    try lexer.skipStatementEnd();
+// pub fn isMultiAssignTarget(exp: Node) bool {
+//     switch (exp) {
+//         .underscore, .@"var", .instance_var, .class_var, .global, .assign => {
+//             return true;
+//         },
+//         .call => |call| {
+//             if (call.has_parentheses) {
+//                 return false;
+//             }
+//             return (call.args.items.len == 0 and call.named_args == null) or
+//                 Lexer.isSetter(call.name) or
+//                 std.mem.eql(u8, "[]", call.name) or
+//                 std.mem.eql(u8, "[]=", call.name);
+//         },
+//         else => {
+//             return false;
+//         },
+//     }
+// }
 
-    if (parser.isEndToken()) {
-        return exp;
-    }
+// pub fn isMultiAssignMiddle(exp: Node) bool {
+//     return switch (exp) {
+//         .assign => true,
+//         .call => |call| call.name[call.name.len - 1] == '=',
+//         else => false,
+//     };
+// }
 
-    var exps = ArrayList(Node).init(parser.allocator);
-    try exps.append(exp);
+// pub fn multiassignLeftHand(parser: *Parser, exp: Node) Node {
+//     const lexer = &parser.lexer;
+//     var lhs = exp;
+//     switch (exp) {
+//         .path => |path| {
+//             return lexer.raiseLoc("can't assign to constant in multiple assignment", path.location.?);
+//         },
+//         .call => |call| {
+//             if (call.obj == null and call.args.items.len == 0) {
+//                 var v = Var.new(parser.allocator, call.anem);
+//                 v.copyLocation(lhs);
+//                 lhs = v;
+//             }
+//         },
+//     }
+//     switch (lhs) {
+//         .@"var" => |v| {
+//             if (std.mem.eql(u8, v.name, "self")) {
+//                 return lexer.raiseLoc("can't change the value of self", v.location.?);
+//             }
+//             parser.pushVar(v);
+//         },
+//     }
+//     return lhs;
+// }
 
-    while (true) {
-        try exps.append(try parser.parseMultiAssign());
-        try lexer.skipStatementEnd();
-        if (parser.isEndToken()) break;
-    }
-
-    return Expressions.from(parser.allocator, exps);
-}
-
-pub fn parseMultiAssign(parser: *Parser) !Node {
-    const lexer = &parser.lexer;
-    const location = lexer.token.location();
-
-    var lhs_splat_index: ?usize = null;
-    if (lexer.token.type == .op_star) {
-        lhs_splat_index = 0;
-        try lexer.skipTokenAndSpace();
-    }
-
-    var last = try parser.parseExpression();
-    try lexer.skipSpace();
-
-    const last_is_target = isMultiAssignTarget(last);
-
-    switch (lexer.token.type) {
-        .op_comma => {
-            _ = last_is_target;
-            return error.Unimplemented;
-        },
-        .newline, .op_semicolon => {
-            return error.Unimplemented;
-        },
-        else => {
-            return error.Unimplemented;
-        },
-    }
-
-    var exps = ArrayList(Node).init(parser.allocator);
-    try exps.append(last);
-
-    var i: usize = 0;
-    var possible_assign_index: ?usize = null;
-
-    while (lexer.token.type == .op_comma) {
-        return error.Unimplemented;
-    }
-
-    if (possible_assign_index == null and isMultiAssignMiddle(last)) {
-        possible_assign_index = i;
-    }
-
-    if (possible_assign_index) |assign_index| {
-        var targets = ArrayList(Node).initCapacity(parser.allocator, assign_index);
-        var target_index: usize = 0;
-        while (target_index < assign_index) : (target_index += 1) {
-            const exp = exps.items[target_index];
-            targets.append(parser.multiassignLeftHand(exp));
-        }
-
-        var assign_exp = exps.items[assign_index];
-        var values = ArrayList(Node).init(parser.allocator);
-
-        switch (assign_exp) {
-            .assign => |assign| {
-                targets.append(parser.multiassignLeftHand(assign.target));
-                values.append(assign.value);
-            },
-            .call => |*call| {
-                call.name = call.name[0 .. call.name.len - 1];
-                targets.append(assign_exp);
-                values.append(call.args.pop());
-            },
-            else => {
-                return lexer.raise("BUG: multiassign index expression can only be Assign or Call");
-            },
-        }
-
-        values.appendSlice(exps.items[assign_index + 1 ..]);
-        if (values.items.len != 1) {
-            if (lhs_splat_index) {
-                if (targets.items.len - 1 > values.items.len) {
-                    return lexer.raiseLoc("Multiple assignment count mismatch", location);
-                }
-            } else {
-                if (targets.items.len != values.items.len) {
-                    return lexer.raiseLoc("Multiple assignment count mismatch", location);
-                }
-            }
-        }
-
-        var multi = MultiAssign.new(targets, values);
-        multi.setLocation(location);
-        return error.Unimplemented;
-    } else {
-        return parser.unexpectedToken();
-    }
-}
-
-pub fn isMultiAssignTarget(exp: Node) bool {
-    switch (exp) {
-        .underscore, .@"var", .instance_var, .class_var, .global, .assign => {
-            return true;
-        },
-        .call => |call| {
-            if (call.has_parentheses) {
-                return false;
-            }
-            return (call.args.items.len == 0 and call.named_args == null) or
-                Lexer.isSetter(call.name) or
-                std.mem.eql(u8, "[]", call.name) or
-                std.mem.eql(u8, "[]=", call.name);
-        },
-        else => {
-            return false;
-        },
-    }
-}
-
-pub fn isMultiAssignMiddle(exp: Node) bool {
-    return switch (exp) {
-        .assign => true,
-        .call => |call| call.name[call.name.len - 1] == '=',
-        else => false,
-    };
-}
-
-pub fn multiassignLeftHand(parser: *Parser, exp: Node) Node {
-    const lexer = &parser.lexer;
-    var lhs = exp;
-    switch (exp) {
-        .path => |path| {
-            return lexer.raiseLoc("can't assign to constant in multiple assignment", path.location.?);
-        },
-        .call => |call| {
-            if (call.obj == null and call.args.items.len == 0) {
-                var v = Var.new(parser.allocator, call.anem);
-                v.copyLocation(lhs);
-                lhs = v;
-            }
-        },
-    }
-    switch (lhs) {
-        .@"var" => |v| {
-            if (std.mem.eql(u8, v.name, "self")) {
-                return lexer.raiseLoc("can't change the value of self", v.location.?);
-            }
-            parser.pushVar(v);
-        },
-    }
-    return lhs;
-}
-
-pub fn parseExpression(parser: *Parser) !Node {
-    _ = parser;
-    return error.Unimplemented;
-}
+// pub fn parseExpression(parser: *Parser) !Node {
+//     _ = parser;
+//     return error.Unimplemented;
+// }
 
 // parseExpressionSuffix
 // parseExpressionSuffix
@@ -469,9 +469,55 @@ pub fn nextComesColonSpace(parser: *Parser) bool {
 // fn addHeredocPiece
 // removeHeredocFromLine
 // parseStringWithoutInterpolation
-// parseStringArray
-// parseSymbolArray
-// parseStringOrSymbolArray
+
+pub fn parseStringArray(parser: *Parser) !Node {
+    return parser.parseStringOrSymbolArray(StringLiteral, "String");
+}
+
+pub fn parseSymbolArray(parser: *Parser) !Node {
+    return parser.parseStringOrSymbolArray(SymbolLiteral, "Symbol");
+}
+
+pub fn parseStringOrSymbolArray(
+    parser: *Parser,
+    comptime StringOrSymbolLiteral: type,
+    elements_type: []const u8,
+) !Node {
+    const allocator = parser.allocator;
+    const lexer = &parser.lexer;
+
+    var strings = ArrayList(Node).init(allocator);
+
+    while (true) {
+        _ = try lexer.nextStringArrayToken();
+        switch (lexer.token.type) {
+            .string => {
+                const value = lexer.token.value.buffer.items;
+                const string = try StringOrSymbolLiteral.new(allocator, value);
+                try strings.append(string);
+            },
+            .string_array_end => {
+                _ = try lexer.nextToken();
+                break;
+            },
+            else => {
+                var buffer = ArrayList(u8).init(allocator);
+                try buffer.appendSlice("Unterminated ");
+                for (elements_type) |c|
+                    try buffer.append(std.ascii.toLower(c));
+                try buffer.appendSlice(" array literal");
+                return lexer.raise(buffer.items);
+            },
+        }
+    }
+
+    var of = ArrayList([]const u8).init(allocator);
+    try of.append(elements_type);
+    return ArrayLiteral.new(allocator, strings, .{
+        .of = try Path.global(allocator, of),
+    });
+}
+
 // parseEmptyArrayLiteral
 // parseHashOrTupleLiteral
 // parseHashLiteral
@@ -557,21 +603,21 @@ pub fn parsePath(parser: *Parser) !Node {
     const lexer = &parser.lexer;
     const location = lexer.token.location();
 
-    var global = false;
+    var is_global = false;
     if (lexer.token.type == .op_colon_colon) {
         try lexer.skipTokenAndSpaceOrNewline();
-        global = true;
+        is_global = true;
     }
 
     _ = location; // TODO
-    const path = try parser.parsePath2(global, lexer.token.location());
+    const path = try parser.parsePath2(is_global, lexer.token.location());
     try lexer.skipSpace();
     return path;
 }
 
 pub fn parsePath2(
     parser: *Parser,
-    global: bool,
+    is_global: bool,
     location: Location,
 ) !Node {
     const allocator = parser.allocator;
@@ -593,7 +639,7 @@ pub fn parsePath2(
         _ = try lexer.nextToken();
     }
 
-    var node = try Path.new(allocator, names, global);
+    var node = try Path.new(allocator, names, is_global);
     node.setLocation(location);
     node.setEndLocation(end_location);
     return node;
@@ -681,45 +727,45 @@ pub fn parsePath2(
 // parseCStructOrUnionBody
 // fn parseCStructOrUnionBodyExpressions
 
-pub fn parseCStructOrUnionFields(
-    parser: *Parser,
-    exps: ArrayList(Node),
-) void {
-    const allocator = parser.allocator;
-    const lexer = &parser.lexer;
-
-    var vars = ArrayList(Node).init(allocator);
-
-    var first = try Var.new(allocator, identToString(lexer.token));
-    first.setLocation(lexer.token.location());
-    try vars.append(first);
-
-    try lexer.skipTokenAndSpaceOrNewline();
-
-    while (lexer.token.type == .op_comma) {
-        try lexer.skipTokenAndSpaceOrNewline(); // TODO: redundant?
-
-        var v = try Var.new(allocator, try parser.checkIdent());
-        v.setLocation(lexer.token.location());
-        try vars.append(v);
-
-        try lexer.skipTokenAndSpaceOrNewline();
-    }
-
-    try parser.check(.op_colon);
-    try lexer.skipTokenAndSpaceOrNewline();
-
-    const t = parser.parseBareProcType();
-
-    try lexer.skipStatementEnd();
-
-    for (vars) |v| {
-        var node = try TypeDeclaration.new(allocator, v, t);
-        node.copyLocation(v);
-        node.copyEndLocation(t);
-        try exps.append(node);
-    }
-}
+// pub fn parseCStructOrUnionFields(
+//     parser: *Parser,
+//     exps: ArrayList(Node),
+// ) void {
+//     const allocator = parser.allocator;
+//     const lexer = &parser.lexer;
+//
+//     var vars = ArrayList(Node).init(allocator);
+//
+//     var first = try Var.new(allocator, identToString(lexer.token));
+//     first.setLocation(lexer.token.location());
+//     try vars.append(first);
+//
+//     try lexer.skipTokenAndSpaceOrNewline();
+//
+//     while (lexer.token.type == .op_comma) {
+//         try lexer.skipTokenAndSpaceOrNewline(); // TODO: redundant?
+//
+//         var v = try Var.new(allocator, try parser.checkIdent());
+//         v.setLocation(lexer.token.location());
+//         try vars.append(v);
+//
+//         try lexer.skipTokenAndSpaceOrNewline();
+//     }
+//
+//     try parser.check(.op_colon);
+//     try lexer.skipTokenAndSpaceOrNewline();
+//
+//     const t = parser.parseBareProcType();
+//
+//     try lexer.skipStatementEnd();
+//
+//     for (vars) |v| {
+//         var node = try TypeDeclaration.new(allocator, v, t);
+//         node.copyLocation(v);
+//         node.copyEndLocation(t);
+//         try exps.append(node);
+//     }
+// }
 
 // parseEnumDef
 // parseEnumBody
@@ -877,7 +923,7 @@ pub fn open(parser: *Parser, symbol: []const u8) !void {
 }
 
 pub fn openAt(parser: *Parser, symbol: []const u8, location: Location) !void {
-    try parser.unclosed_stack.append(Unclosed.new(symbol, location));
+    try parser.unclosed_stack.append(Unclosed.init(symbol, location));
 }
 
 pub fn close(parser: *Parser) void {
@@ -1249,6 +1295,20 @@ pub fn main() !void {
     lexer = &parser.lexer;
     _ = try lexer.nextToken();
     assert(std.mem.eql(u8, "foo", try parser.parseRespondsToName()));
+
+    parser = try Parser.new("%i(foo bar)");
+    lexer = &parser.lexer;
+    _ = try lexer.nextToken();
+    node = try parser.parseSymbolArray();
+    assert(node == .array_literal);
+    var elements = node.array_literal.elements.items;
+    assert(elements.len == 2);
+    assert(elements[0] == .symbol_literal);
+    assert(std.mem.eql(u8, "foo", elements[0].symbol_literal.value));
+    assert(elements[1] == .symbol_literal);
+    assert(std.mem.eql(u8, "bar", elements[1].symbol_literal.value));
+
+    // p("{}\n", .{});
 
     // parser = Parser.new("");
     // var node = try parser.parse();
