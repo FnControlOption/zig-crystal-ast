@@ -375,17 +375,31 @@ pub const NumberLiteral = struct {
     value: []const u8,
     kind: NumberKind = .i32,
 
-    pub fn allocate(allocator: Allocator, value: anytype) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        value: []const u8,
+        kind: NumberKind,
+    ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
-            .value = try std.fmt.allocPrint(allocator, "{d}", .{value}),
-            .kind = NumberKind.fromNumber(value),
+            .value = value,
+            .kind = kind,
         };
         return instance;
     }
 
-    pub fn new(allocator: Allocator, value: anytype) !Node {
-        return Node{ .number_literal = try allocate(allocator, value) };
+    pub fn new(
+        allocator: Allocator,
+        value: []const u8,
+        kind: NumberKind,
+    ) !Node {
+        return Node{ .number_literal = try allocate(allocator, value, kind) };
+    }
+
+    pub fn fromNumber(allocator: Allocator, number: anytype) !Node {
+        const value = try std.fmt.allocPrint(allocator, "{d}", .{number});
+        const kind = NumberKind.fromNumber(number);
+        return new(allocator, value, kind);
     }
 
     pub fn hasSign(self: @This()) bool {
@@ -1824,20 +1838,20 @@ pub fn main() !void {
     // n = .{ .number_literal = .{ .value = "1" } }; p("{}\n", .{ n.number_literal.hasSign() });
     // n = .{ .number_literal = .{ .value = "+1" } }; p("{}\n", .{ n.number_literal.hasSign() });
     // n = .{ .number_literal = .{ .value = "-1" } }; p("{}\n", .{ n.number_literal.hasSign() });
-    n = try NumberLiteral.new(allocator, 1); p("{s}\n", .{ n.number_literal.value });
-    n = try NumberLiteral.new(allocator, 1); p("{}\n", .{ n.number_literal.hasSign() });
+    n = try NumberLiteral.fromNumber(allocator, 1); p("{s}\n", .{ n.number_literal.value });
+    n = try NumberLiteral.fromNumber(allocator, 1); p("{}\n", .{ n.number_literal.hasSign() });
     // p("{}\n", .{@TypeOf(null)});
     // p("{}\n", .{@Type(.Null)});
     p("{}\n", .{try Expressions.from(allocator, null)});
     // const x: []*Node = &.{};
     // p("{}\n", .{[]*Node});
     // p("{}\n", .{@TypeOf(x)});
-    p("{}\n", .{try Expressions.from(allocator, try NumberLiteral.new(allocator, 1))});
+    p("{}\n", .{try Expressions.from(allocator, try NumberLiteral.fromNumber(allocator, 1))});
     p("{}\n", .{try Expressions.from(allocator, ArrayList(Node).init(allocator))});
     // {
     // var list = ArrayList(Node).init(allocator);
-    // list = ArrayList(Node).init(allocator); try list.append(try NumberLiteral.new(allocator, 2)); p("{}\n", .{try Expressions.from(allocator, list)});
-    // list = ArrayList(Node).init(allocator); try list.append(try NumberLiteral.new(allocator, 3)); try list.append(try NumberLiteral.new(allocator, 4)); p("{any}\n", .{(try Expressions.from(allocator, list)).expressions.expressions});
+    // list = ArrayList(Node).init(allocator); try list.append(try NumberLiteral.fromNumber(allocator, 2)); p("{}\n", .{try Expressions.from(allocator, list)});
+    // list = ArrayList(Node).init(allocator); try list.append(try NumberLiteral.fromNumber(allocator, 3)); try list.append(try NumberLiteral.fromNumber(allocator, 4)); p("{any}\n", .{(try Expressions.from(allocator, list)).expressions.expressions});
     // }
     p("{}\n", .{try Block.new(allocator, ArrayList(*Var).init(allocator), null)});
     p("{}\n", .{try If.new(allocator, try BoolLiteral.new(allocator, true), null, null)});
@@ -1858,17 +1872,17 @@ pub fn main() !void {
     p("{}\n", .{(try Nop.new(allocator)).isNop()});
     p("{}\n", .{(try BoolLiteral.new(allocator, true)).isTrueLiteral()});
     p("{}\n", .{(try BoolLiteral.new(allocator, false)).isFalseLiteral()});
-    p("{}\n", .{(try NumberLiteral.new(allocator, 1)).singleExpression()});
+    p("{}\n", .{(try NumberLiteral.fromNumber(allocator, 1)).singleExpression()});
     p("{}\n", .{(try Expressions.new(allocator, ArrayList(Node).init(allocator))).singleExpression()});
     {
         var expressions = ArrayList(Node).init(allocator);
-        try expressions.append(try NumberLiteral.new(allocator, 1));
+        try expressions.append(try NumberLiteral.fromNumber(allocator, 1));
         p("{}\n", .{(try Expressions.new(allocator, expressions)).singleExpression()});
     }
     {
         var expressions = ArrayList(Node).init(allocator);
-        try expressions.append(try NumberLiteral.new(allocator, 1));
-        try expressions.append(try NumberLiteral.new(allocator, 2));
+        try expressions.append(try NumberLiteral.fromNumber(allocator, 1));
+        try expressions.append(try NumberLiteral.fromNumber(allocator, 2));
         p("{}\n", .{(try Expressions.new(allocator, expressions)).singleExpression()});
     }
     {

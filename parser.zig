@@ -400,16 +400,32 @@ pub fn parseRespondsToName(parser: *Parser) ![]const u8 {
 // parseNilQuestion
 // parseNegationSuffix
 
-// pub fn parseAtomic(parser: *Parser) !Node {
-//     const lexer = &parser.lexer;
-//     const location = lexer.token.location();
-//     const atomic = try parser.parseAtomicWithoutLocation();
-//     if (atomic.location() == null)
-//         atomic.setLocation(location);
-//     return atomic;
-// }
+pub fn parseAtomic(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const location = lexer.token.location();
+    const atomic = try parser.parseAtomicWithoutLocation();
+    if (atomic.location() == null)
+        atomic.setLocation(location);
+    return atomic;
+}
 
-// pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {}
+pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
+    const allocator = parser.allocator;
+    const lexer = &parser.lexer;
+    switch (lexer.token.type) {
+        // TODO
+        .char => {
+            const value = lexer.token.value.char;
+            const node = try CharLiteral.new(allocator, value);
+            try parser.skipNodeToken(node);
+            return node;
+        },
+        // TODO
+        else => {
+            return parser.unexpectedTokenInAtomic();
+        },
+    }
+}
 
 // checkTypeDeclaration
 // parseTypeDeclaration
@@ -791,11 +807,10 @@ pub fn parsePath2(
 // parseEnumBody
 // fn parseEnumBodyExpressions
 
-pub fn nodeAndNextToken(parser: *Parser, node: Node) !Node {
+pub fn skipNodeToken(parser: *Parser, node: Node) !void {
     const lexer = &parser.lexer;
     node.setEndLocation(lexer.tokenEndLocation());
     try lexer.skipToken();
-    return node;
 }
 
 pub fn isEndToken(parser: *Parser) bool {
@@ -1210,10 +1225,8 @@ pub fn main() !void {
     lexer = &parser.lexer;
     try lexer.skipToken();
     var token_end_location = lexer.tokenEndLocation();
-    var node0 = try Var.new(parser.allocator, "foo");
-    var node = try parser.nodeAndNextToken(node0);
-    assert(node == .@"var");
-    assert(node.@"var" == node0.@"var");
+    var node = try Var.new(parser.allocator, "foo");
+    try parser.skipNodeToken(node);
     assert(node.endLocation().?.compare(.eq, token_end_location));
 
     parser = try Parser.new("Foo");
@@ -1327,6 +1340,12 @@ pub fn main() !void {
     assert(std.mem.eql(u8, "foo", elements[0].symbol_literal.value));
     assert(elements[1] == .symbol_literal);
     assert(std.mem.eql(u8, "bar", elements[1].symbol_literal.value));
+
+    parser = try Parser.new("'F'");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicWithoutLocation();
+    assert(node == .char_literal);
 
     // p("{}\n", .{});
 
