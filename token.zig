@@ -69,66 +69,11 @@ pub const Keyword = enum {
 
     pub fn toString(keyword: Keyword) []const u8 {
         return switch (keyword) {
-            .abstract => "abstract",
-            .alias => "alias",
-            .annotation => "annotation",
-            .as => "as",
             .as_question => "as?",
-            .@"asm" => "asm",
-            .begin => "begin",
-            .@"break" => "break",
-            .case => "case",
-            .class => "class",
-            .def => "def",
-            .do => "do",
-            .@"else" => "else",
-            .elsif => "elsif",
-            .end => "end",
-            .ensure => "ensure",
-            .@"enum" => "enum",
-            .extend => "extend",
-            .false => "false",
-            .@"for" => "for",
-            .fun => "fun",
-            .@"if" => "if",
-            .in => "in",
-            .include => "include",
-            .instance_sizeof => "instance_sizeof",
             .is_a_question => "is_a?",
-            .lib => "lib",
-            .macro => "macro",
-            .module => "module",
-            .next => "next",
-            .nil => "nil",
             .nil_question => "nil?",
-            .of => "of",
-            .offsetof => "offsetof",
-            .out => "out",
-            .pointerof => "pointerof",
-            .private => "private",
-            .protected => "protected",
-            .require => "require",
-            .rescue => "rescue",
             .responds_to_question => "responds_to?",
-            .@"return" => "return",
-            .select => "select",
-            .self => "self",
-            .sizeof => "sizeof",
-            .@"struct" => "struct",
-            .super => "super",
-            .then => "then",
-            .true => "true",
-            .type => "type",
-            .typeof => "typeof",
-            .uninitialized => "uninitialized",
-            .@"union" => "union",
-            .unless => "unless",
-            .until => "until",
-            .verbatim => "verbatim",
-            .when => "when",
-            .@"while" => "while",
-            .with => "with",
-            .yield => "yield",
+            else => @tagName(keyword),
         };
     }
 
@@ -378,7 +323,7 @@ pub const Kind = enum {
 
 pub const Value = union(enum) {
     char: u8,
-    utf8: u21,
+    utf8: []const u8,
     string: []const u8,
     buffer: ArrayList(u8),
     keyword: Keyword,
@@ -508,20 +453,14 @@ pub fn isKeyword(token: Token, keyword: Keyword) bool {
 }
 
 pub fn toString(token: Token, writer: anytype) !void {
-    switch (token.value) {
-        .char => |char| return writer.writeByte(char),
-        .utf8 => |codepoint| {
-            var encoded: [4]u8 = undefined;
-            if (std.unicode.utf8Encode(codepoint, &encoded)) |length| {
-                return writer.writeAll(encoded[0..length]);
-            } else |_| {}
-        },
-        .string => |string| return writer.writeAll(string),
-        .buffer => |buffer| return writer.writeAll(buffer.items),
-        .keyword => |keyword| return writer.print("{}", .{keyword}),
-        else => {},
-    }
-    return writer.print("{}", .{token.type});
+    return switch (token.value) {
+        .char => |char| writer.writeByte(char),
+        .utf8 => |encoded| writer.writeAll(encoded),
+        .string => |string| writer.writeAll(string),
+        .buffer => |buffer| writer.writeAll(buffer.items),
+        .keyword => |keyword| writer.writeAll(keyword.toString()),
+        .nil => writer.writeAll(token.type.toString()),
+    };
 }
 
 pub fn format(token: Token, comptime fmt: []const u8, opt: FormatOptions, writer: anytype) !void {

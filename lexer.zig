@@ -191,7 +191,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     reset_regex_flags = false;
                 },
                 else => {
-                    try lexer.unknownToken();
+                    return lexer.unknownToken();
                 },
             }
         },
@@ -210,7 +210,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 reset_regex_flags = false;
                 try lexer.consumeNewlines();
             } else {
-                try lexer.raise("expected '\\n' after '\\r'");
+                return lexer.raise("expected '\\n' after '\\r'");
             }
         },
         '=' => {
@@ -310,7 +310,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     try lexer.scanNumber(start, false);
                 },
                 '+' => {
-                    try lexer.raise("postfix increment is not supported, use `exp += 1`");
+                    return lexer.raise("postfix increment is not supported, use `exp += 1`");
                 },
                 else => {
                     lexer.token.type = .op_plus;
@@ -330,7 +330,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                     try lexer.scanNumber(start, true);
                 },
                 '-' => {
-                    try lexer.raise("postfix decrement is not supported, use `exp -= 1`");
+                    return lexer.raise("postfix decrement is not supported, use `exp -= 1`");
                 },
                 else => {
                     lexer.token.type = .op_minus;
@@ -453,7 +453,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                                 }, start);
                             },
                             else => {
-                                try lexer.raise("unknown %r char");
+                                return lexer.raise("unknown %r char");
                             },
                         }
                     },
@@ -465,7 +465,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                                 }, start);
                             },
                             else => {
-                                try lexer.raise("unknown %x char");
+                                return lexer.raise("unknown %x char");
                             },
                         }
                     },
@@ -570,7 +570,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 },
                 else => |char| {
                     if (std.ascii.isDigit(char)) {
-                        try lexer.raiseAt(".1 style number literal is not supported, put 0 before dot", line, column);
+                        return lexer.raiseAt(".1 style number literal is not supported, put 0 before dot", line, column);
                     }
                     lexer.token.type = .op_period;
                 },
@@ -1308,7 +1308,7 @@ pub fn _nextToken(lexer: *Lexer) !Token {
                 lexer.skipChar();
                 _ = lexer.scanIdent(start);
             } else {
-                try lexer.unknownToken();
+                return lexer.unknownToken();
             }
         },
     }
@@ -1384,7 +1384,7 @@ pub fn consumeWhitespace(lexer: *Lexer) !void {
                         lexer.token.passed_backslash_newline = true;
                     },
                     else => {
-                        try lexer.unknownToken();
+                        return lexer.unknownToken();
                     },
                 }
             },
@@ -1418,7 +1418,7 @@ pub fn consumeNewlines(lexer: *Lexer) !void {
             },
             '\r' => {
                 if (lexer.nextCharNoColumnIncrement() != '\n') {
-                    try lexer.raise("expected '\\n' after '\\r'");
+                    return lexer.raise("expected '\\n' after '\\r'");
                 }
                 lexer.skipCharNoColumnIncrement();
                 lexer.incrLineNumberWithColumn(null);
@@ -1527,7 +1527,7 @@ pub fn consumeOctalEscape(lexer: *Lexer, first_char: u8) !u8 {
         if (@mulWithOverflow(u8, value, 8, &value) or
             @addWithOverflow(u8, value, char - '0', &value))
         {
-            try lexer.raise("octal value too big");
+            return lexer.raise("octal value too big");
         }
     }
     return value;
@@ -1544,13 +1544,11 @@ pub fn consumeCharUnicodeEscape(lexer: *Lexer) !u21 {
 
 pub fn consumeStringHexEscape(lexer: *Lexer) !u8 {
     const high = std.fmt.parseInt(u4, &[1]u8{lexer.nextChar()}, 16) catch {
-        try lexer.raise("invalid hex escape");
-        unreachable;
+        return lexer.raise("invalid hex escape");
     };
 
     const low = std.fmt.parseInt(u4, &[1]u8{lexer.nextChar()}, 16) catch {
-        try lexer.raise("invalid hex escape");
-        unreachable;
+        return lexer.raise("invalid hex escape");
     };
 
     return (@intCast(u8, high) << 4) | low;
@@ -1589,7 +1587,7 @@ pub fn consumeNonBracedUnicodeEscape(lexer: *Lexer) !u16 {
         }
     }
     if (0xD800 <= codepoint and codepoint <= 0xDFFF) {
-        try lexer.raise("invalid unicode codepoint (surrogate half)");
+        return lexer.raise("invalid unicode codepoint (surrogate half)");
     }
     return codepoint;
 }
@@ -1622,7 +1620,7 @@ pub fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
                     if (@mulWithOverflow(u21, 16, codepoint, &codepoint) or
                         @addWithOverflow(u21, codepoint, hex_value, &codepoint))
                     {
-                        try lexer.raise("invalid unicode codepoint (too large)");
+                        return lexer.raise("invalid unicode codepoint (too large)");
                     }
                     found_digit = true;
                 } else {
@@ -1635,9 +1633,9 @@ pub fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
     if (!found_digit) {
         try lexer.expectedHexadecimalCharacterInUnicodeEscape();
     } else if (codepoint > 0x10FFFF) {
-        try lexer.raise("invalid unicode codepoint (too large)");
+        return lexer.raise("invalid unicode codepoint (too large)");
     } else if (0xD800 <= codepoint and codepoint <= 0xDFFF) {
-        try lexer.raise("invalid unicode codepoint (surrogate half)");
+        return lexer.raise("invalid unicode codepoint (surrogate half)");
     }
 
     if (!found_space) {
@@ -1646,7 +1644,7 @@ pub fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
         }
 
         if (char != '}') {
-            try lexer.raise("expected '}' to close unicode escape");
+            return lexer.raise("expected '}' to close unicode escape");
         }
     }
 
@@ -1654,7 +1652,7 @@ pub fn consumeBracedUnicodeEscape(lexer: *Lexer, allow_spaces: bool) !u21 {
 }
 
 pub fn expectedHexadecimalCharacterInUnicodeEscape(lexer: *Lexer) !void {
-    try lexer.raise("expected hexadecimal character in unicode escape");
+    return lexer.raise("expected hexadecimal character in unicode escape");
 }
 
 // stringTokenEscapeValue
@@ -1704,7 +1702,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
             while (true) {
                 switch (lexer.currentChar()) {
                     '"' => break,
-                    0 => try lexer.raise("unexpected end of file in loc pragma"),
+                    0 => return lexer.raise("unexpected end of file in loc pragma"),
                     else => lexer.skipCharNoColumnIncrement(),
                 }
             }
@@ -1716,7 +1714,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
             lexer.skipChar();
 
             if (lexer.currentChar() != ',') {
-                try lexer.raise("expected ',' in loc pragma after filename");
+                return lexer.raise("expected ',' in loc pragma after filename");
             }
             lexer.skipChar();
 
@@ -1731,7 +1729,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                         break;
                     },
                     else => {
-                        try lexer.raise("expected digit or ',' in loc pragma for line number");
+                        return lexer.raise("expected digit or ',' in loc pragma for line number");
                     },
                 }
                 lexer.skipChar();
@@ -1748,7 +1746,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                         break;
                     },
                     else => {
-                        try lexer.raise("expected digit or '>' in loc pragma for column_number number");
+                        return lexer.raise("expected digit or '>' in loc pragma for column_number number");
                     },
                 }
                 lexer.skipChar();
@@ -1762,7 +1760,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                     if (lexer.nextCharNoColumnIncrement() != 'p' or
                         lexer.nextCharNoColumnIncrement() != '>')
                     {
-                        try lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
+                        return lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
                     }
 
                     // skip '>'
@@ -1777,7 +1775,7 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                         lexer.nextCharNoColumnIncrement() != 'h' or
                         lexer.nextCharNoColumnIncrement() != '>')
                     {
-                        try lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
+                        return lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
                     }
 
                     // skip '>'
@@ -1790,12 +1788,12 @@ pub fn consumeLocPragma(lexer: *Lexer) !void {
                     lexer.pushLocation();
                 },
                 else => {
-                    try lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
+                    return lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
                 },
             }
         },
         else => {
-            try lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
+            return lexer.raise("expected #<loc:push>, #<loc:pop> or #<loc:\"...\">");
         },
     }
 }
@@ -1810,7 +1808,7 @@ fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
     }
 
     if (!isIdentPart(lexer.currentChar())) {
-        try lexer.raise("heredoc identifier starts with invalid character");
+        return lexer.raise("heredoc identifier starts with invalid character");
     }
 
     const start_here = lexer.current_pos;
@@ -1824,7 +1822,7 @@ fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
                 lexer.skipChar();
                 break;
             } else {
-                try lexer.raise("expecting '\\n' after '\\r'");
+                return lexer.raise("expecting '\\n' after '\\r'");
             }
         } else if (char == '\n') {
             end_here = lexer.current_pos;
@@ -1832,7 +1830,7 @@ fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
         } else if (isIdentPart(char)) {
             // ok
         } else if (char == 0) {
-            try lexer.raise("Unexpected EOF on heredoc identifier");
+            return lexer.raise("Unexpected EOF on heredoc identifier");
         } else {
             if (char == '\'' and has_single_quote) {
                 found_closing_single_quote = true;
@@ -1849,7 +1847,7 @@ fn consumeHeredocStart(lexer: *Lexer, start: usize) !void {
     }
 
     if (has_single_quote and !found_closing_single_quote) {
-        try lexer.raise("expecting closing single quote");
+        return lexer.raise("expecting closing single quote");
     }
 
     const here = lexer.stringRange2(start_here, end_here);
@@ -1895,7 +1893,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                     lexer.skipSymbolChar("=~", start);
                 },
                 else => {
-                    try lexer.unknownToken();
+                    return lexer.unknownToken();
                 },
             }
         },
@@ -1991,7 +1989,7 @@ fn consumeSymbol(lexer: *Lexer, first_char: u8, start: usize) !void {
                     },
                 }
             } else {
-                try lexer.unknownToken();
+                return lexer.unknownToken();
             }
         },
         '"' => {
@@ -2076,7 +2074,7 @@ fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
                         try buffer.append('\n');
                     },
                     0 => {
-                        try lexer.raiseAt("unterminated quoted symbol", line, column);
+                        return lexer.raiseAt("unterminated quoted symbol", line, column);
                     },
                     else => |char| {
                         try buffer.append(char);
@@ -2087,7 +2085,7 @@ fn consumeQuotedSymbol(lexer: *Lexer, start: usize) !void {
                 break;
             },
             0 => {
-                try lexer.raiseAt("unterminated quoted symbol", line, column);
+                return lexer.raiseAt("unterminated quoted symbol", line, column);
             },
             else => |char| {
                 try buffer.append(char);
@@ -2149,13 +2147,16 @@ fn consumeCharLiteral(lexer: *Lexer) !void {
                 },
                 'u' => {
                     const codepoint = try lexer.consumeCharUnicodeEscape();
-                    lexer.token.value = .{ .utf8 = codepoint };
+                    var buf: [4]u8 = undefined;
+                    const length = try std.unicode.utf8Encode(codepoint, &buf);
+                    const encoded = buf[0..length];
+                    lexer.token.value = .{ .utf8 = try lexer.allocator.dupe(u8, encoded) };
                 },
                 '0' => {
                     lexer.token.value = .{ .char = std.ascii.control_code.nul }; // '\0'
                 },
                 0 => {
-                    try lexer.raiseAt("unterminated char literal", line, column);
+                    return lexer.raiseAt("unterminated char literal", line, column);
                 },
                 else => |char| {
                     const message = try std.fmt.allocPrint(
@@ -2163,22 +2164,22 @@ fn consumeCharLiteral(lexer: *Lexer) !void {
                         "invalid char escape sequence '\\{c}'",
                         .{char},
                     );
-                    try lexer.raiseAt(message, line, column);
+                    return lexer.raiseAt(message, line, column);
                 },
             }
         },
         '\'' => {
-            try lexer.raiseAt("invalid empty char literal (did you mean '\\''?)", line, column);
+            return lexer.raiseAt("invalid empty char literal (did you mean '\\''?)", line, column);
         },
         0 => {
-            try lexer.raiseAt("unterminated char literal", line, column);
+            return lexer.raiseAt("unterminated char literal", line, column);
         },
         else => |char| {
             lexer.token.value = .{ .char = char };
         },
     }
     if (lexer.nextChar() != '\'') {
-        try lexer.raiseAt("unterminated char literal, use double quotes for strings", line, column);
+        return lexer.raiseAt("unterminated char literal, use double quotes for strings", line, column);
     }
     lexer.skipChar();
     lexer.setTokenRawFromStart(start);
@@ -2192,7 +2193,7 @@ fn consumeVariable(lexer: *Lexer, token_type: Token.Kind, start: usize) !void {
         lexer.token.type = token_type;
         lexer.token.value = .{ .string = lexer.stringRange(start) };
     } else {
-        try lexer.unknownToken();
+        return lexer.unknownToken();
     }
 }
 
@@ -2430,7 +2431,7 @@ pub fn handleCrlfOrLf(lexer: *Lexer) !bool {
     const isCarriageReturn = lexer.currentChar() == '\r';
     if (isCarriageReturn) {
         if (lexer.nextChar() != '\n') {
-            try lexer.raise("expecting '\\n' after '\\r'");
+            return lexer.raise("expecting '\\n' after '\\r'");
         }
     }
     return isCarriageReturn;
@@ -2447,16 +2448,16 @@ inline fn charSequence(lexer: *Lexer, comptime chars: []const u8) bool {
     return true;
 }
 
-pub fn unknownToken(lexer: *Lexer) !void {
+pub fn unknownToken(lexer: *Lexer) error{ SyntaxError, OutOfMemory } {
     switch (lexer.currentChar()) {
-        '\n' => try lexer.raise("unknown token: '\\n'"),
+        '\n' => return lexer.raise("unknown token: '\\n'"),
         else => |c| {
             const message = try std.fmt.allocPrint(
                 lexer.allocator,
                 "unknown token: '{s}'",
                 .{std.fmt.fmtSliceEscapeUpper(&[1]u8{c})},
             );
-            try lexer.raise(message);
+            return lexer.raise(message);
         },
     }
 }
@@ -2467,7 +2468,7 @@ pub fn setTokenRawFromStart(lexer: *Lexer, start: usize) void {
     }
 }
 
-pub fn raise(lexer: *Lexer, message: []const u8) !void {
+pub fn raise(lexer: *Lexer, message: []const u8) error{SyntaxError} {
     return lexer.raiseAt(
         message,
         lexer.line_number,
@@ -2480,7 +2481,7 @@ pub fn raiseAt(
     message: []const u8,
     line_number: usize,
     column_number: usize,
-) !void {
+) error{SyntaxError} {
     lexer.error_message = message;
     // zig fmt: off
     _ = line_number; _ = column_number; // TODO
@@ -2492,7 +2493,7 @@ pub fn raiseFor(
     lexer: *Lexer,
     message: []const u8,
     token: Token,
-) !void {
+) error{SyntaxError} {
     return lexer.raiseAt(
         message,
         token.line_number,
@@ -2505,7 +2506,7 @@ pub fn raiseLoc(
     lexer: *Lexer,
     message: []const u8,
     location: Location,
-) !void {
+) error{SyntaxError} {
     return lexer.raiseAt(
         message,
         location.line_number,
@@ -2836,9 +2837,9 @@ pub fn main() !void {
     // p("{s}\n", .{escape(&[1]u8{'\n'})}); // => \x0A
     // p("{}\n", .{"\\x0A".len}); // => 4
     lexer = Lexer.new("f\n");
-    if (lexer.unknownToken()) |_| unreachable else |err| p("{} {?s}\n", .{err, lexer.error_message});
+    p("{} {?s}\n", .{lexer.unknownToken(), lexer.error_message});
     lexer.skipChar();
-    if (lexer.unknownToken()) |_| unreachable else |err| p("{} {?s}\n", .{err, lexer.error_message});
+    p("{} {?s}\n", .{lexer.unknownToken(), lexer.error_message});
     lexer = Lexer.new("\r");
     if (lexer.handleCrlfOrLf()) |_| unreachable else |err| p("{} {?s}\n", .{err, lexer.error_message});
     lexer = Lexer.new("\r\n");
@@ -3162,10 +3163,7 @@ pub fn main() !void {
         token = try lexer.nextToken();
         assert(token.type == .char);
         assert(token.value == .utf8);
-        var buf: [4]u8 = undefined;
-        const length = try std.unicode.utf8Encode(token.value.utf8, &buf);
-        const encoded = buf[0..length];
-        p("{} {s} {s} {any} {}\n", .{token.type, encoded, token.raw, encoded, @as(std.meta.Tag(Token.Value), token.value)});
+        p("{} {s} {s} {any} {}\n", .{token.type, token.value.utf8, token.raw, token.value.utf8, @as(std.meta.Tag(Token.Value), token.value)});
     }
 
     // consumeSymbol

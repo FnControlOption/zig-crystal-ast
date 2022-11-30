@@ -274,7 +274,7 @@ pub fn parseMultiAssign(parser: *Parser) !Node {
                 values.append(call.args.pop());
             },
             else => {
-                try lexer.raise("BUG: multiassign index expression can only be Assign or Call");
+                return lexer.raise("BUG: multiassign index expression can only be Assign or Call");
             },
         }
 
@@ -282,11 +282,11 @@ pub fn parseMultiAssign(parser: *Parser) !Node {
         if (values.items.len != 1) {
             if (lhs_splat_index) {
                 if (targets.items.len - 1 > values.items.len) {
-                    try lexer.raiseLoc("Multiple assignment count mismatch", location);
+                    return lexer.raiseLoc("Multiple assignment count mismatch", location);
                 }
             } else {
                 if (targets.items.len != values.items.len) {
-                    try lexer.raiseLoc("Multiple assignment count mismatch", location);
+                    return lexer.raiseLoc("Multiple assignment count mismatch", location);
                 }
             }
         }
@@ -295,8 +295,7 @@ pub fn parseMultiAssign(parser: *Parser) !Node {
         multi.setLocation(location);
         return error.Unimplemented;
     } else {
-        try parser.unexpectedToken();
-        unreachable;
+        return parser.unexpectedToken();
     }
 }
 
@@ -333,7 +332,7 @@ pub fn multiassignLeftHand(parser: *Parser, exp: Node) Node {
     var lhs = exp;
     switch (exp) {
         .path => |path| {
-            try lexer.raiseLoc("can't assign to constant in multiple assignment", path.location.?);
+            return lexer.raiseLoc("can't assign to constant in multiple assignment", path.location.?);
         },
         .call => |call| {
             if (call.obj == null and call.args.items.len == 0) {
@@ -346,7 +345,7 @@ pub fn multiassignLeftHand(parser: *Parser, exp: Node) Node {
     switch (lhs) {
         .@"var" => |v| {
             if (std.mem.eql(u8, v.name, "self")) {
-                try lexer.raiseLoc("can't change the value of self", v.location.?);
+                return lexer.raiseLoc("can't change the value of self", v.location.?);
             }
             parser.pushVar(v);
         },
@@ -387,7 +386,21 @@ pub fn parseExpression(parser: *Parser) !Node {
 // parseAs
 // parseAsQuestion
 // parseRespondsTo
-// parseRespondsToName
+
+pub fn parseRespondsToName(parser: *Parser) ![]const u8 {
+    const lexer = &parser.lexer;
+
+    if (lexer.token.type != .symbol) {
+        return parser.unexpectedTokenMsg("expected symbol");
+    }
+
+    return switch (lexer.token.value) {
+        .string => |string| string,
+        .buffer => |buffer| buffer.items,
+        else => unreachable,
+    };
+}
+
 // parseNilQuestion
 // parseNegationSuffix
 // parseAtomic
@@ -588,7 +601,32 @@ pub fn parsePath2(
 
 // parseTypeArgs
 // parseNamedTypeArgs
-// parseTypeSplat
+
+// pub fn consumeTypeSplatStar(parser: *Parser) Node {
+//     const lexer = &parser.lexer;
+//     if (lexer.token.type == .op_star) {
+//         try lexer.skipTokenAndSpaceOrNewline();
+//         return true;
+//     } else {
+//         return false;
+//     }
+// }
+
+// pub fn parseUnionTypeSplat(
+//     type_: Node,
+//     location: Location,
+//     splat: bool,
+// ) !Node {
+//     const lexer = &parser.lexer;
+//     const location = lexer.token.location();
+//     // if (splat) {
+//     //     var node = try Splat.new(parser.allocator, type_);
+//     //     node.setLocation(location);
+//     //     return node;
+//     // }
+//     parseUnionType
+// }
+
 // parseTypeArg
 // parseTypeSuffix
 // parseProcTypeOutput
@@ -627,7 +665,18 @@ pub fn parsePath2(
 // parseInstanceSizeof
 // parseSizeof
 // parseOffsetof
-// parseTypeDef
+
+// pub fn parseTypeDef(parser: *Parser) Node {
+//     const lexer = &parser.lexer;
+//     try lexer.skipTokenAndSpaceOrNewline();
+//     const name = try parser.checkConst();
+//     const name_location = lexer.token.location();
+//     try lexer.skipTokenAndSpaceOrNewline();
+//     try parser.check(.op_eq);
+//     try lexer.skipTokenAndSpaceOrNewline();
+//     const type = parser.parseBareProcType();
+// }
+
 // parseCStructOrUnion
 // parseCStructOrUnionBody
 // fn parseCStructOrUnionBodyExpressions
@@ -802,7 +851,7 @@ pub fn pushVar(parser: *Parser, node: Node) !void {
                     try parser.pushVarName(instance_var.name);
                 },
                 else => {
-                    try lexer.raise("can't happen");
+                    return lexer.raise("can't happen");
                 },
             }
         },
@@ -839,7 +888,7 @@ pub fn checkVoidValue(parser: *Parser, exp: Node, location: Location) !void {
     const lexer = &parser.lexer;
     switch (exp) {
         .@"break", .next, .@"return" => {
-            try lexer.raiseLoc("void value expression", location);
+            return lexer.raiseLoc("void value expression", location);
         },
         else => {},
     }
@@ -852,7 +901,7 @@ pub fn checkVoidExpressionKeyword(parser: *Parser) !void {
             switch (keyword) {
                 .@"break", .next, .@"return" => {
                     if (!parser.nextComesColonSpace()) {
-                        try lexer.raiseFor("void value expression", lexer.token);
+                        return lexer.raiseFor("void value expression", lexer.token);
                         // TODO: keyword.toString().len
                     }
                 },
@@ -883,7 +932,7 @@ pub fn checkAny(parser: *Parser, token_types: []const Token.Kind) !void {
     try buffer.appendSlice(" (not '");
     try buffer.appendSlice(lexer.token.type.toString());
     try buffer.appendSlice("')");
-    try lexer.raiseFor(buffer.items, lexer.token);
+    return lexer.raiseFor(buffer.items, lexer.token);
 }
 
 pub fn check(parser: *Parser, token_type: Token.Kind) !void {
@@ -894,7 +943,7 @@ pub fn check(parser: *Parser, token_type: Token.Kind) !void {
             "expecting token '{}', not '{}'",
             .{ token_type, lexer.token },
         );
-        try lexer.raiseFor(message, lexer.token);
+        return lexer.raiseFor(message, lexer.token);
     }
 }
 
@@ -902,7 +951,7 @@ pub fn checkIdentKeyword(parser: *Parser, value: Keyword) !void {
     const lexer = &parser.lexer;
     if (!lexer.token.isKeyword(value)) {
         const message = try std.fmt.allocPrint(parser.allocator, "expecting identifier '{}', not '{}'", .{ value, lexer.token });
-        try lexer.raiseFor(message, lexer.token);
+        return lexer.raiseFor(message, lexer.token);
     }
 }
 
@@ -926,27 +975,36 @@ pub fn checkConst(parser: *Parser) ![]const u8 {
     switch (lexer.token.value) {
         .string => |string| return string,
         else => {
-            try parser.unexpectedToken();
-            unreachable;
+            return parser.unexpectedToken();
         },
     }
 }
 
-pub fn unexpectedToken(parser: *Parser) !void {
-    const lexer = &parser.lexer;
-    if (lexer.token.type == .eof) {
-        try lexer.raiseFor("unexpected token: EOF", lexer.token);
-    } else {
-        const message = try std.fmt.allocPrint(
-            parser.allocator,
-            "unexpected token: {}",
-            .{lexer.token},
-        );
-        try lexer.raiseFor(message, lexer.token);
-    }
+pub fn unexpectedToken(parser: *Parser) error{ SyntaxError, OutOfMemory } {
+    return parser.unexpectedTokenMsg(null);
 }
 
-pub fn unexpectedTokenInAtomic(parser: *Parser) !void {
+pub fn unexpectedTokenMsg(parser: *Parser, msg: ?[]const u8) error{ SyntaxError, OutOfMemory } {
+    const lexer = &parser.lexer;
+    var buffer = ArrayList(u8).init(parser.allocator);
+    var writer = buffer.writer();
+    try writer.writeAll("unexpected token: ");
+    if (lexer.token.type == .eof) {
+        try writer.writeAll("EOF");
+    } else {
+        try writer.writeByte('"');
+        try lexer.token.toString(writer);
+        try writer.writeByte('"');
+    }
+    if (msg) |m| {
+        try writer.writeAll(" (");
+        try writer.writeAll(m);
+        try writer.writeByte(')');
+    }
+    return lexer.raiseFor(buffer.items, lexer.token);
+}
+
+pub fn unexpectedTokenInAtomic(parser: *Parser) error{ SyntaxError, OutOfMemory } {
     const lexer = &parser.lexer;
     const unclosed_stack = parser.unclosed_stack.items;
     if (unclosed_stack.len > 0) {
@@ -956,10 +1014,10 @@ pub fn unexpectedTokenInAtomic(parser: *Parser) !void {
             "unterminated {s}",
             .{unclosed.name},
         );
-        try lexer.raiseLoc(message, unclosed.location);
+        return lexer.raiseLoc(message, unclosed.location);
     }
 
-    try parser.unexpectedToken();
+    return parser.unexpectedToken();
 }
 
 pub fn isVar(parser: Parser, name: []const u8) bool {
@@ -1153,19 +1211,15 @@ pub fn main() !void {
     lexer = &parser.lexer;
     _ = try lexer.nextToken();
     try parser.open("fizz");
-    if (parser.unexpectedTokenInAtomic()) |_| unreachable else |err| {
-        assert(err == error.SyntaxError);
-        assert(std.mem.eql(u8, lexer.error_message.?, blk: {
-            break :blk "unterminated fizz";
-        }));
-    }
+    assert(parser.unexpectedTokenInAtomic() == error.SyntaxError);
+    assert(std.mem.eql(u8, lexer.error_message.?, blk: {
+        break :blk "unterminated fizz";
+    }));
     parser.close();
-    if (parser.unexpectedTokenInAtomic()) |_| unreachable else |err| {
-        assert(err == error.SyntaxError);
-        assert(std.mem.eql(u8, lexer.error_message.?, blk: {
-            break :blk "unexpected token: foo";
-        }));
-    }
+    assert(parser.unexpectedTokenInAtomic() == error.SyntaxError);
+    assert(std.mem.eql(u8, lexer.error_message.?, blk: {
+        break :blk "unexpected token: \"foo\"";
+    }));
 
     parser = try Parser.new("foo");
     assert(parser.visibility == null);
@@ -1190,6 +1244,11 @@ pub fn main() !void {
     while (i < expected_names.len) : (i += 1) {
         assert(std.mem.eql(u8, expected_names[i], actual_names[i]));
     }
+
+    parser = try Parser.new(":foo");
+    lexer = &parser.lexer;
+    _ = try lexer.nextToken();
+    assert(std.mem.eql(u8, "foo", try parser.parseRespondsToName()));
 
     // parser = Parser.new("");
     // var node = try parser.parse();
