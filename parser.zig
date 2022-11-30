@@ -291,7 +291,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //             }
 //         }
 //
-//         var multi = MultiAssign.new(targets, values);
+//         const multi = MultiAssign.new(targets, values);
 //         multi.setLocation(location);
 //         return error.Unimplemented;
 //     } else {
@@ -399,8 +399,18 @@ pub fn parseRespondsToName(parser: *Parser) ![]const u8 {
 
 // parseNilQuestion
 // parseNegationSuffix
-// parseAtomic
-// parseAtomicWithoutLocation
+
+// pub fn parseAtomic(parser: *Parser) !Node {
+//     const lexer = &parser.lexer;
+//     const location = lexer.token.location();
+//     const atomic = try parser.parseAtomicWithoutLocation();
+//     if (atomic.location() == null)
+//         atomic.setLocation(location);
+//     return atomic;
+// }
+
+// pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {}
+
 // checkTypeDeclaration
 // parseTypeDeclaration
 
@@ -649,7 +659,7 @@ pub fn parsePath2(
         try lexer.skipToken();
     }
 
-    var node = try Path.new(allocator, names, is_global);
+    const node = try Path.new(allocator, names, is_global);
     node.setLocation(location);
     node.setEndLocation(end_location);
     return node;
@@ -676,7 +686,7 @@ pub fn parsePath2(
 //     const lexer = &parser.lexer;
 //     const location = lexer.token.location();
 //     // if (splat) {
-//     //     var node = try Splat.new(parser.allocator, type_);
+//     //     const node = try Splat.new(parser.allocator, type_);
 //     //     node.setLocation(location);
 //     //     return node;
 //     // }
@@ -746,7 +756,7 @@ pub fn parsePath2(
 //
 //     var vars = ArrayList(Node).init(allocator);
 //
-//     var first = try Var.new(allocator, identToString(lexer.token));
+//     const first = try Var.new(allocator, identToString(lexer.token));
 //     first.setLocation(lexer.token.location());
 //     try vars.append(first);
 //
@@ -755,7 +765,7 @@ pub fn parsePath2(
 //     while (lexer.token.type == .op_comma) {
 //         try lexer.skipTokenAndSpaceOrNewline(); // TODO: redundant?
 //
-//         var v = try Var.new(allocator, try parser.checkIdent());
+//         const v = try Var.new(allocator, try parser.checkIdent());
 //         v.setLocation(lexer.token.location());
 //         try vars.append(v);
 //
