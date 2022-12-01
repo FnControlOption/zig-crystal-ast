@@ -185,7 +185,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 
 // pub fn parseExpressionsInternal(parser: *Parser) !Node {
 //     if (parser.isEndToken()) {
-//         return Nop.new(parser.allocator);
+//         return Nop.node(parser.allocator);
 //     }
 //
 //     const exp = try parser.parseMultiAssign();
@@ -291,7 +291,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //             }
 //         }
 //
-//         const multi = MultiAssign.new(targets, values);
+//         const multi = try MultiAssign.node(allocator, targets, values);
 //         multi.setLocation(location);
 //         return error.Unimplemented;
 //     } else {
@@ -328,6 +328,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 // }
 
 // pub fn multiassignLeftHand(parser: *Parser, exp: Node) Node {
+//     allocator = parser.allocator;
 //     const lexer = &parser.lexer;
 //     var lhs = exp;
 //     switch (exp) {
@@ -336,7 +337,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //         },
 //         .call => |call| {
 //             if (call.obj == null and call.args.items.len == 0) {
-//                 var v = Var.new(parser.allocator, call.anem);
+//                 var v = try Var.node(allocator, call.anem);
 //                 v.copyLocation(lhs);
 //                 lhs = v;
 //             }
@@ -416,7 +417,7 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         // TODO
         .char => {
             const value = lexer.token.value.char;
-            const node = try CharLiteral.new(allocator, value);
+            const node = try CharLiteral.node(allocator, value);
             try parser.skipNodeToken(node);
             return node;
         },
@@ -429,7 +430,7 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         },
         .symbol => {
             const value = lexer.token.value.string;
-            const node = try SymbolLiteral.new(allocator, value);
+            const node = try SymbolLiteral.node(allocator, value);
             try parser.skipNodeToken(node);
             return node;
         },
@@ -447,13 +448,13 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                 try lexer.skipTokenAndSpace();
                 break :blk lexer.token.type == .op_eq;
             }) {
-                const v = try Var.new(allocator, name);
+                const v = try Var.node(allocator, name);
                 v.setLocation(location);
                 try parser.pushVar(v);
                 try parser.skipNodeToken(v);
                 return v;
             } else {
-                const node = try Global.new(allocator, name);
+                const node = try Global.node(allocator, name);
                 node.setLocation(location);
                 return node;
             }
@@ -488,11 +489,11 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                     error.InvalidCharacter => return err,
                 }
             };
-            const receiver = try Global.new(allocator, "$~");
+            const receiver = try Global.node(allocator, "$~");
             receiver.setLocation(location);
             var args = ArrayList(Node).init(allocator);
             try args.append(try NumberLiteral.fromNumber(allocator, index));
-            const node = try Call.new(allocator, receiver, method, args);
+            const node = try Call.node(allocator, receiver, method, args);
             try parser.skipNodeToken(node);
             return node;
         },
@@ -506,7 +507,7 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         },
         // TODO
         .underscore => {
-            const node = try Underscore.new(allocator);
+            const node = try Underscore.node(allocator);
             try parser.skipNodeToken(node);
             return node;
         },
@@ -604,7 +605,7 @@ pub fn parseStringOrSymbolArray(
         switch (lexer.token.type) {
             .string => {
                 const value = lexer.token.value.string;
-                const string = try StringOrSymbolLiteral.new(allocator, value);
+                const string = try StringOrSymbolLiteral.node(allocator, value);
                 try strings.append(string);
             },
             .string_array_end => {
@@ -624,7 +625,7 @@ pub fn parseStringOrSymbolArray(
 
     var of = ArrayList([]const u8).init(allocator);
     try of.append(elements_type);
-    return ArrayLiteral.new(allocator, strings, .{
+    return ArrayLiteral.node(allocator, strings, .{
         .of = try Path.global(allocator, of),
     });
 }
@@ -764,7 +765,7 @@ pub fn parsePath2(
         try lexer.skipToken();
     }
 
-    const node = try Path.new(allocator, names, is_global);
+    const node = try Path.node(allocator, names, is_global);
     node.setLocation(location);
     node.setEndLocation(end_location);
     return node;
@@ -788,10 +789,11 @@ pub fn parsePath2(
 //     location: Location,
 //     splat: bool,
 // ) !Node {
+//     const allocator = parser.allocator;
 //     const lexer = &parser.lexer;
 //     const location = lexer.token.location();
 //     // if (splat) {
-//     //     const node = try Splat.new(parser.allocator, type_);
+//     //     const node = try Splat.node(allocator, type_);
 //     //     node.setLocation(location);
 //     //     return node;
 //     // }
@@ -861,7 +863,7 @@ pub fn parsePath2(
 //
 //     var vars = ArrayList(Node).init(allocator);
 //
-//     const first = try Var.new(allocator, identToString(lexer.token));
+//     const first = try Var.node(allocator, identToString(lexer.token));
 //     first.setLocation(lexer.token.location());
 //     try vars.append(first);
 //
@@ -870,7 +872,7 @@ pub fn parsePath2(
 //     while (lexer.token.type == .op_comma) {
 //         try lexer.skipTokenAndSpaceOrNewline(); // TODO: redundant?
 //
-//         const v = try Var.new(allocator, try parser.checkIdent());
+//         const v = try Var.node(allocator, try parser.checkIdent());
 //         v.setLocation(lexer.token.location());
 //         try vars.append(v);
 //
@@ -885,7 +887,7 @@ pub fn parsePath2(
 //     try lexer.skipStatementEnd();
 //
 //     for (vars) |v| {
-//         var node = try TypeDeclaration.new(allocator, v, t);
+//         var node = try TypeDeclaration.node(allocator, v, t);
 //         node.copyLocation(v);
 //         node.copyEndLocation(t);
 //         try exps.append(node);
@@ -1233,10 +1235,10 @@ pub fn main() !void {
 
     assert(parser.isVarInScope("fizz") == false);
     assert(parser.isVarInScope("buzz") == false);
-    try parser.pushVar(try Var.new(parser.allocator, "fizz"));
+    try parser.pushVar(try Var.node(parser.allocator, "fizz"));
     try parser.pushVars(blk: {
         var vars = ArrayList(Node).init(parser.allocator);
-        try vars.append(try Var.new(parser.allocator, "buzz"));
+        try vars.append(try Var.node(parser.allocator, "buzz"));
         break :blk vars;
     });
     assert(parser.isVarInScope("fizz"));
@@ -1287,9 +1289,9 @@ pub fn main() !void {
         }));
     }
 
-    assert(canBeAssigned(try Var.new(parser.allocator, "foo")));
+    assert(canBeAssigned(try Var.node(parser.allocator, "foo")));
     assert(
-        canBeAssigned(try Call.new(
+        canBeAssigned(try Call.node(
             parser.allocator,
             null,
             "foo",
@@ -1297,14 +1299,14 @@ pub fn main() !void {
         )),
     );
     assert(
-        canBeAssigned(try Call.new(
+        canBeAssigned(try Call.node(
             parser.allocator,
-            try Var.new(parser.allocator, "foo"),
+            try Var.node(parser.allocator, "foo"),
             "[]",
             blk: {
                 var args = ArrayList(Node).init(parser.allocator);
-                try args.append(try Var.new(parser.allocator, "bar"));
-                // try args.append(try Var.new(parser.allocator, "fizz"));
+                try args.append(try Var.node(parser.allocator, "bar"));
+                // try args.append(try Var.node(parser.allocator, "fizz"));
                 break :blk args;
             },
         )),
@@ -1314,7 +1316,7 @@ pub fn main() !void {
     lexer = &parser.lexer;
     try lexer.skipToken();
     var token_end_location = lexer.tokenEndLocation();
-    var node = try Var.new(parser.allocator, "foo");
+    var node = try Var.node(parser.allocator, "foo");
     try parser.skipNodeToken(node);
     assert(node.endLocation().?.compare(.eq, token_end_location));
 
@@ -1366,7 +1368,7 @@ pub fn main() !void {
     _ = try parser.checkVoidExpressionKeyword();
 
     if (parser.checkVoidValue(
-        try Return.new(parser.allocator),
+        try Return.node(parser.allocator),
         Location.new(null, 0, 0),
     )) |_| unreachable else |err| {
         assert(err == error.SyntaxError);
