@@ -501,7 +501,15 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             try parser.skipNodeToken(node);
             return node;
         },
+        .magic_end_line => {
+            return lexer.raiseFor("__END_LINE__ can only be used in default parameter value", lexer.token);
+        },
         // TODO
+        .underscore => {
+            const node = try Underscore.new(allocator);
+            try parser.skipNodeToken(node);
+            return node;
+        },
         else => {
             return parser.unexpectedTokenInAtomic();
         },
@@ -1501,6 +1509,13 @@ pub fn main() !void {
     node = try parser.parseAtomic();
     assert(node == .number_literal);
     assert(std.mem.eql(u8, "2", node.number_literal.value));
+
+    // .underscore
+    parser = try Parser.new("_");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomic();
+    assert(node == .underscore);
 
     // p("{}\n", .{});
 
