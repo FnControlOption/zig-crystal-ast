@@ -421,6 +421,13 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             return node;
         },
         // TODO
+        .symbol => {
+            const value = lexer.token.value.string;
+            const node = try SymbolLiteral.new(allocator, value);
+            try parser.skipNodeToken(node);
+            return node;
+        },
+        // TODO
         else => {
             return parser.unexpectedTokenInAtomic();
         },
@@ -1346,6 +1353,14 @@ pub fn main() !void {
     try lexer.skipToken();
     node = try parser.parseAtomicWithoutLocation();
     assert(node == .char_literal);
+    assert(node.char_literal.value == 'F');
+
+    parser = try Parser.new(":foo");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicWithoutLocation();
+    assert(node == .symbol_literal);
+    assert(std.mem.eql(u8, "foo", node.symbol_literal.value));
 
     // p("{}\n", .{});
 
