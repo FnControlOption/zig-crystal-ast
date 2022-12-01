@@ -1,6 +1,6 @@
 # zig-crystal-ast
 
-Crystal AST implemented in Zig (WIP)
+Crystal language parser and AST implemented in Zig (WIP)
 
 Crystal:
 
@@ -19,20 +19,20 @@ class While < ASTNode
 end
 ```
 
-Zig (outdated, but same idea):
+Zig:
 
 ```zig
-pub const ASTNode = union(enum) {
+pub const Node = union(enum) {
     // ...
-    while_: *While,
+    @"while": *While,
     yield: *Yield,
 };
 
 pub const While = struct {
-    cond: ASTNode,
-    body: ASTNode,
+    cond: Node,
+    body: Node,
 
-    pub fn create(allocator: std.mem.Allocator, cond: ASTNode, body: ?ASTNode) !*@This() {
+    pub fn allocate(allocator: std.mem.Allocator, cond: Node, body: ?Node) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
@@ -41,8 +41,8 @@ pub const While = struct {
         return instance;
     }
 
-    pub fn new(allocator: std.mem.Allocator, cond: ASTNode, body: ?ASTNode) !ASTNode {
-        return ASTNode { .while_ = try create(allocator, cond, body) };
+    pub fn node(allocator: std.mem.Allocator, cond: Node, body: ?Node) !Node {
+        return Node { .@"while" = try allocate(allocator, cond, body) };
     }
 };
 ```
