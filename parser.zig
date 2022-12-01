@@ -946,18 +946,14 @@ pub fn canBeAssigned(node: Node) bool {
 }
 
 const DefOrMacroCheck1 = &[_]Token.Kind{
-    .ident,                 .@"const",                    .op_grave,
-    .op_lt_lt,              .op_lt,                       .op_lt_eq,
-    .op_eq_eq,              .op_eq_eq_eq,                 .op_bang_eq,
-    .op_eq_tilde,           .op_bang_tilde,               .op_gt_gt,
-    .op_gt,                 .op_gt_eq,                    .op_plus,
-    .op_minus,              .op_star,                     .op_slash,
-    .op_slash_slash,        .op_bang,                     .op_tilde,
-    .op_percent,            .op_amp,                      .op_bar,
-    .op_caret,              .op_star_star,                .op_lsquare_rsquare,
-    .op_lsquare_rsquare_eq, .op_lsquare_rsquare_question, .op_lt_eq_gt,
-    .op_amp_plus,           .op_amp_minus,                .op_amp_star,
-    .op_amp_star_star,
+    // zig fmt: off
+    .ident, .@"const", .op_grave,
+    .op_lt_lt, .op_lt, .op_lt_eq, .op_eq_eq, .op_eq_eq_eq, .op_bang_eq, .op_eq_tilde,
+    .op_bang_tilde, .op_gt_gt, .op_gt, .op_gt_eq, .op_plus, .op_minus, .op_star, .op_slash,
+    .op_slash_slash, .op_bang, .op_tilde, .op_percent, .op_amp, .op_bar, .op_caret, .op_star_star,
+    .op_lsquare_rsquare, .op_lsquare_rsquare_eq, .op_lsquare_rsquare_question, .op_lt_eq_gt,
+    .op_amp_plus, .op_amp_minus, .op_amp_star, .op_amp_star_star,
+    // zig fmt: on
 };
 
 pub fn consumeDefOrMacroName(parser: *Parser) ![]const u8 {
@@ -1144,12 +1140,7 @@ fn identToString(token: Token) []const u8 {
 pub fn checkConst(parser: *Parser) ![]const u8 {
     const lexer = &parser.lexer;
     try parser.check(.@"const");
-    switch (lexer.token.value) {
-        .string => |string| return string,
-        else => {
-            return parser.unexpectedToken();
-        },
-    }
+    return lexer.token.value.string;
 }
 
 pub fn unexpectedToken(parser: *Parser) error{ SyntaxError, OutOfMemory } {
