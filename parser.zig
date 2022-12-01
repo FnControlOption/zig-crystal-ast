@@ -458,6 +458,44 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                 return node;
             }
         },
+        .global_match_data_index => {
+            if (blk: {
+                lexer.startPeekAhead();
+                defer lexer.endPeekAhead();
+                try lexer.skipTokenAndSpace();
+                break :blk lexer.token.type == .op_eq;
+            }) {
+                return lexer.raise("global match data cannot be assigned to");
+            }
+
+            var method: []const u8 = "[]";
+            var value = lexer.token.value.string;
+            if (value[value.len - 1] == '?') {
+                method = "[]?";
+                value = value[0 .. value.len - 1];
+            }
+            const location = lexer.token.location();
+            // TODO: slightly inefficient
+            const index = std.fmt.parseInt(i32, value, 10) catch |err| {
+                switch (err) {
+                    error.Overflow => {
+                        return lexer.raise(try std.fmt.allocPrint(
+                            allocator,
+                            "Index ${s} doesn't fit in an Int32",
+                            .{value},
+                        ));
+                    },
+                    error.InvalidCharacter => return err,
+                }
+            };
+            const receiver = try Global.new(allocator, "$~");
+            receiver.setLocation(location);
+            var args = ArrayList(Node).init(allocator);
+            try args.append(try NumberLiteral.fromNumber(allocator, index));
+            const node = try Call.new(allocator, receiver, method, args);
+            try parser.skipNodeToken(node);
+            return node;
+        },
         // TODO
         else => {
             return parser.unexpectedTokenInAtomic();
@@ -1435,6 +1473,19 @@ pub fn main() !void {
     node = try parser.parseAtomic();
     assert(node == .@"var");
     assert(std.mem.eql(u8, "$?", node.@"var".name));
+
+    // .global_match_data_index
+    parser = try Parser.new("$123");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomic();
+    assert(node == .call);
+    assert(node.call.obj.? == .global);
+    assert(std.mem.eql(u8, "$~", node.call.obj.?.global.name));
+    assert(std.mem.eql(u8, "[]", node.call.name));
+    assert(node.call.args.items.len == 1);
+    assert(node.call.args.items[0] == .number_literal);
+    assert(std.mem.eql(u8, "123", node.call.args.items[0].number_literal.value));
 
     // p("{}\n", .{});
 
