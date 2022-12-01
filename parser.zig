@@ -718,7 +718,12 @@ pub fn resetStopOnDo(parser: *Parser, old_value: bool) void {
 // parseGenericOrGlobalCall
 // parseBareProcType
 // parseUnionType
-// parseAtomicTypeWithSuffix
+
+pub fn parseAtomicTypeWithSuffix(parser: *Parser) !Node {
+    var t = try parser.parseAtomicType();
+    try parser.parseTypeSuffix(&t);
+    return t;
+}
 
 pub fn parseAtomicType(parser: *Parser) !Node {
     const lexer = &parser.lexer;
@@ -847,7 +852,43 @@ pub fn parsePath2(
 // }
 
 // parseTypeArg
-// parseTypeSuffix
+
+pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+    while (true) {
+        switch (lexer.token.type) {
+            .op_period => {
+                try lexer.skipTokenAndSpaceOrNewline();
+                try parser.checkIdentKeyword(.class);
+                try lexer.skipTokenAndSpace();
+                const node = try Metaclass.node(allocator, t.*);
+                node.copyLocation(t.*);
+                t.* = node;
+            },
+            .op_question => {
+                try lexer.skipTokenAndSpace();
+                t.* = try parser.makeNilableType(t.*);
+            },
+            .op_star => {
+                try lexer.skipTokenAndSpace();
+                t.* = try parser.makePointerType(t.*);
+            },
+            .op_star_star => {
+                try lexer.skipTokenAndSpace();
+                t.* = try parser.makePointerType(t.*);
+                t.* = try parser.makePointerType(t.*);
+            },
+            .op_lsquare => {
+                return parser.unexpectedToken(); // TODO
+            },
+            else => {
+                return;
+            }
+        }
+    }
+}
+
 // parseProcTypeOutput
 
 pub fn makeNilableType(parser: *const Parser, t: Node) !Node {
@@ -867,7 +908,22 @@ pub fn makeNilableType(parser: *const Parser, t: Node) !Node {
 }
 
 // makeNilableExpression
-// makePointerType
+
+pub fn makePointerType(parser: *const Parser, t: Node) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const pointer = try Path.global(allocator, "Pointer");
+    pointer.copyLocation(t);
+
+    var type_vars = ArrayList(Node).init(allocator);
+    try type_vars.append(t);
+
+    const generic = try Generic.node(allocator, pointer, type_vars);
+    generic.copyLocation(t);
+    return generic;
+}
+
 // makeStaticArrayType
 // makeTupleType
 // makeNamedTupleType
@@ -1583,13 +1639,13 @@ pub fn main() !void {
     parser = try Parser.new("self");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicType();
+    node = try parser.parseAtomicTypeWithSuffix();
     assert(node == .self);
 
     parser = try Parser.new("self?");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicType();
+    node = try parser.parseAtomicTypeWithSuffix();
     assert(node == .@"union");
     assert(node.@"union".types.items.len == 2);
     assert(node.@"union".types.items[0] == .self);
@@ -1601,8 +1657,34 @@ pub fn main() !void {
     parser = try Parser.new("_");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicType();
+    node = try parser.parseAtomicTypeWithSuffix();
     assert(node == .underscore);
+
+    // parseTypeSuffix
+    parser = try Parser.new("self*");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicTypeWithSuffix();
+    assert(node == .generic);
+    assert(node.generic.name == .path);
+    assert(node.generic.name.path.is_global);
+    assert(std.mem.eql(u8, "Pointer", node.generic.name.path.names.items[0]));
+    assert(node.generic.type_vars.items[0] == .self);
+
+    parser = try Parser.new("self**");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicTypeWithSuffix();
+    assert(node == .generic);
+    assert(node.generic.name == .path);
+    assert(node.generic.name.path.is_global);
+    assert(std.mem.eql(u8, "Pointer", node.generic.name.path.names.items[0]));
+    node = node.generic.type_vars.items[0];
+    assert(node == .generic);
+    assert(node.generic.name == .path);
+    assert(node.generic.name.path.is_global);
+    assert(std.mem.eql(u8, "Pointer", node.generic.name.path.names.items[0]));
+    assert(node.generic.type_vars.items[0] == .self);
 
     // p("{}\n", .{});
 

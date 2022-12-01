@@ -1349,6 +1349,27 @@ pub const Generic = struct {
         asterisk,
         bracket,
     };
+
+    pub fn allocate(
+        allocator: Allocator,
+        name: Node,
+        type_vars: ArrayList(Node),
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .name = name,
+            .type_vars = type_vars,
+        };
+        return instance;
+    }
+
+    pub fn node(
+        allocator: Allocator,
+        name: Node,
+        type_vars: ArrayList(Node),
+    ) !Node {
+        return Node{ .generic = try allocate(allocator, name, type_vars) };
+    }
 };
 
 pub const TypeDeclaration = struct {
@@ -1612,6 +1633,16 @@ pub const Metaclass = struct {
     end_location: ?Location = null,
 
     name: Node,
+
+    pub fn allocate(allocator: Allocator, name: Node) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{ .name = name };
+        return instance;
+    }
+
+    pub fn node(allocator: Allocator, name: Node) !Node {
+        return Node{ .metaclass = try allocate(allocator, name) };
+    }
 };
 
 pub const Cast = struct {
