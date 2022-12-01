@@ -427,6 +427,9 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             try parser.skipNodeToken(node);
             return node;
         },
+        .global => {
+            return lexer.raise("$global_variables are not supported, use @@class_variables instead");
+        },
         // TODO
         else => {
             return parser.unexpectedTokenInAtomic();
@@ -1361,6 +1364,16 @@ pub fn main() !void {
     node = try parser.parseAtomicWithoutLocation();
     assert(node == .symbol_literal);
     assert(std.mem.eql(u8, "foo", node.symbol_literal.value));
+
+    parser = try Parser.new("$foo");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    if (parser.parseAtomicWithoutLocation()) |_| unreachable else |err| {
+        assert(err == error.SyntaxError);
+        assert(std.mem.eql(u8, lexer.error_message.?, blk: {
+            break :blk "$global_variables are not supported, use @@class_variables instead";
+        }));
+    }
 
     // p("{}\n", .{});
 
