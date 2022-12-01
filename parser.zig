@@ -421,6 +421,12 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             return node;
         },
         // TODO
+        .string_array_start => {
+            return parser.parseStringArray();
+        },
+        .symbol_array_start => {
+            return parser.parseSymbolArray();
+        },
         .symbol => {
             const value = lexer.token.value.string;
             const node = try SymbolLiteral.new(allocator, value);
@@ -429,6 +435,28 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         },
         .global => {
             return lexer.raise("$global_variables are not supported, use @@class_variables instead");
+        },
+        .op_dollar_tilde, .op_dollar_question => |token_type| {
+            const location = lexer.token.location();
+            // TODO: backport to Crystal
+            const name = token_type.toString();
+
+            if (blk: {
+                lexer.startPeekAhead();
+                defer lexer.endPeekAhead();
+                try lexer.skipTokenAndSpace();
+                break :blk lexer.token.type == .op_eq;
+            }) {
+                const v = try Var.new(allocator, name);
+                v.setLocation(location);
+                try parser.pushVar(v);
+                try parser.skipNodeToken(v);
+                return v;
+            } else {
+                const node = try Global.new(allocator, name);
+                node.setLocation(location);
+                return node;
+            }
         },
         // TODO
         else => {
@@ -1339,41 +1367,74 @@ pub fn main() !void {
     try lexer.skipToken();
     assert(std.mem.eql(u8, "foo", try parser.parseRespondsToName()));
 
+    // .string_array_start / parseStringArray
+    parser = try Parser.new("%w[foo bar]");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomic();
+    assert(node == .array_literal);
+    var elements = node.array_literal.elements.items;
+    assert(elements.len == 2);
+    assert(elements[0] == .string_literal);
+    assert(std.mem.eql(u8, "foo", elements[0].string_literal.value));
+    assert(elements[1] == .string_literal);
+    assert(std.mem.eql(u8, "bar", elements[1].string_literal.value));
+
+    // .symbol_array_start / parseSymbolArray
     parser = try Parser.new("%i(foo bar)");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseSymbolArray();
+    node = try parser.parseAtomic();
     assert(node == .array_literal);
-    var elements = node.array_literal.elements.items;
+    elements = node.array_literal.elements.items;
     assert(elements.len == 2);
     assert(elements[0] == .symbol_literal);
     assert(std.mem.eql(u8, "foo", elements[0].symbol_literal.value));
     assert(elements[1] == .symbol_literal);
     assert(std.mem.eql(u8, "bar", elements[1].symbol_literal.value));
 
+    // .char
     parser = try Parser.new("'F'");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicWithoutLocation();
+    node = try parser.parseAtomic();
     assert(node == .char_literal);
     assert(node.char_literal.value == 'F');
 
+    // .symbol
     parser = try Parser.new(":foo");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicWithoutLocation();
+    node = try parser.parseAtomic();
     assert(node == .symbol_literal);
     assert(std.mem.eql(u8, "foo", node.symbol_literal.value));
 
+    // .global
     parser = try Parser.new("$foo");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    if (parser.parseAtomicWithoutLocation()) |_| unreachable else |err| {
+    if (parser.parseAtomic()) |_| unreachable else |err| {
         assert(err == error.SyntaxError);
         assert(std.mem.eql(u8, lexer.error_message.?, blk: {
             break :blk "$global_variables are not supported, use @@class_variables instead";
         }));
     }
+
+    // .op_dollar_tilde
+    parser = try Parser.new("$~");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomic();
+    assert(node == .global);
+    assert(std.mem.eql(u8, "$~", node.global.name));
+
+    // .op_dollar_question
+    parser = try Parser.new("$? =");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomic();
+    assert(node == .@"var");
+    assert(std.mem.eql(u8, "$?", node.@"var".name));
 
     // p("{}\n", .{});
 

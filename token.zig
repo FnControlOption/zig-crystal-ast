@@ -326,11 +326,11 @@ pub const Value = union(enum) {
     // utf8: []const u8,
     string: []const u8,
     keyword: Keyword,
-    nil,
+    none,
 };
 
 type: Kind = .eof,
-value: Value = .nil,
+value: Value = .none,
 number_kind: NumberKind = .i32,
 line_number: usize = 0,
 column_number: usize = 0,
@@ -457,7 +457,7 @@ pub fn toString(token: Token, writer: anytype) !void {
         // .utf8 => |encoded| writer.writeAll(encoded),
         .string => |string| writer.writeAll(string),
         .keyword => |keyword| writer.writeAll(keyword.toString()),
-        .nil => writer.writeAll(token.type.toString()),
+        .none => writer.writeAll(token.type.toString()),
     };
 }
 

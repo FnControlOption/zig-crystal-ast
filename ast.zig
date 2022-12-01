@@ -664,22 +664,26 @@ pub const TupleLiteral = struct {
     }
 };
 
-pub const Var = struct {
-    location: ?Location = null,
-    end_location: ?Location = null,
+fn SimpleNamedNode(comptime tag_name: []const u8) type {
+    return struct {
+        location: ?Location = null,
+        end_location: ?Location = null,
 
-    name: []const u8,
+        name: []const u8,
 
-    pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
-        var instance = try allocator.create(@This());
-        instance.* = .{ .name = name };
-        return instance;
-    }
+        pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
+            var instance = try allocator.create(@This());
+            instance.* = .{ .name = name };
+            return instance;
+        }
 
-    pub fn new(allocator: Allocator, name: []const u8) !Node {
-        return Node{ .@"var" = try allocate(allocator, name) };
-    }
-};
+        pub fn new(allocator: Allocator, name: []const u8) !Node {
+            return @unionInit(Node, tag_name, try allocate(allocator, name));
+        }
+    };
+}
+
+pub const Var = SimpleNamedNode("var");
 
 pub const Block = struct {
     location: ?Location = null,
@@ -875,12 +879,7 @@ pub const MultiAssign = struct {
     }
 };
 
-pub const InstanceVar = struct {
-    location: ?Location = null,
-    end_location: ?Location = null,
-
-    name: []const u8,
-};
+pub const InstanceVar = SimpleNamedNode("instance_var");
 
 pub const ReadInstanceVar = struct {
     location: ?Location = null,
@@ -890,19 +889,9 @@ pub const ReadInstanceVar = struct {
     name: []const u8,
 };
 
-pub const ClassVar = struct {
-    location: ?Location = null,
-    end_location: ?Location = null,
+pub const ClassVar = SimpleNamedNode("class_var");
 
-    name: []const u8,
-};
-
-pub const Global = struct {
-    location: ?Location = null,
-    end_location: ?Location = null,
-
-    name: []const u8,
-};
+pub const Global = SimpleNamedNode("global");
 
 inline fn BinaryOp(comptime name: []const u8) type {
     return struct {

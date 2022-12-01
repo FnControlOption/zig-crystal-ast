@@ -23,7 +23,10 @@ wants_def_or_macro_name: bool = false,
 string: []const u8,
 current_pos: usize = 0,
 token: Token = .{},
-// temp_token: Token = .{},
+temp_token: Token = .{},
+temp_pos: usize = 0,
+temp_line: usize = 1,
+temp_column: usize = 1,
 line_number: usize = 1,
 column_number: usize = 1,
 wants_symbol: bool = true,
@@ -1494,8 +1497,38 @@ fn raiseUnterminatedQuoted(
 }
 
 // nextMacroToken
+
+pub fn savePosToTemp(lexer: *Lexer) void {
+    lexer.temp_pos = lexer.current_pos;
+    lexer.temp_line = lexer.line_number;
+    lexer.temp_column = lexer.column_number;
+}
+
+pub fn saveTokenToTemp(lexer: *Lexer) void {
+    lexer.temp_token.copyFrom(lexer.token);
+}
+
+pub fn loadPosFromTemp(lexer: *Lexer) void {
+    lexer.current_pos = lexer.temp_pos;
+    lexer.line_number = lexer.temp_line;
+    lexer.column_number = lexer.temp_column;
+}
+
+pub fn loadTokenFromTemp(lexer: *Lexer) void {
+    lexer.token.copyFrom(lexer.temp_token);
+}
+
 // lookahead
-// peekAhead
+
+pub fn startPeekAhead(lexer: *Lexer) void {
+    lexer.savePosToTemp();
+    lexer.saveTokenToTemp();
+}
+
+pub fn endPeekAhead(lexer: *Lexer) void {
+    lexer.loadPosFromTemp();
+    lexer.loadTokenFromTemp();
+}
 
 const skipMacroWhitespace = MacroLexer.skipMacroWhitespace;
 const checkMacroOpeningKeyword = MacroLexer.checkMacroOpeningKeyword;
@@ -2296,7 +2329,7 @@ pub inline fn skipTokenChar(lexer: *Lexer, token_type: Token.Kind) void {
 }
 
 pub fn resetToken(lexer: *Lexer) void {
-    lexer.token.value = .nil;
+    lexer.token.value = .none;
     lexer.token.line_number = lexer.line_number;
     lexer.token.column_number = lexer.column_number;
     lexer.token.filename = lexer.filename;
