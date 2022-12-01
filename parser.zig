@@ -624,10 +624,8 @@ pub fn parseStringOrSymbolArray(
         }
     }
 
-    var of = ArrayList([]const u8).init(allocator);
-    try of.append(elements_type);
     return ArrayLiteral.node(allocator, strings, .{
-        .of = try Path.global(allocator, of),
+        .of = try Path.global(allocator, elements_type),
     });
 }
 
@@ -721,7 +719,54 @@ pub fn resetStopOnDo(parser: *Parser, old_value: bool) void {
 // parseBareProcType
 // parseUnionType
 // parseAtomicTypeWithSuffix
-// parseAtomicType
+
+pub fn parseAtomicType(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+    const location = lexer.token.location();
+
+    switch (lexer.token.type) {
+        .ident => {
+            switch (lexer.token.value) {
+                .keyword => |keyword| {
+                    switch (keyword) {
+                        .self => {
+                            try lexer.skipTokenAndSpace();
+                            const node = try Self.node(allocator);
+                            node.setLocation(location);
+                            return node;
+                        },
+                        .typeof => {
+                            // TODO
+                        },
+                        else => {},
+                    }
+                },
+                .string => |string| {
+                    if (std.mem.eql(u8, string, "self?")) {
+                        try lexer.skipTokenAndSpace();
+                        const node = try Self.node(allocator);
+                        node.setLocation(location);
+                        return parser.makeNilableType(node);
+                    }
+                },
+                else => {},
+            }
+            return parser.unexpectedToken();
+        },
+        .underscore => {
+            try lexer.skipTokenAndSpace();
+            const node = try Underscore.node(allocator);
+            node.setLocation(location);
+            return node;
+        },
+        // TODO
+        else => {
+            return parser.unexpectedToken();
+        },
+    }
+}
+
 // parseUnionTypes
 // parseGeneric
 // parseGeneric
@@ -775,7 +820,7 @@ pub fn parsePath2(
 // parseTypeArgs
 // parseNamedTypeArgs
 
-// pub fn consumeTypeSplatStar(parser: *Parser) Node {
+// pub fn consumeTypeSplatStar(parser: *Parser) bool {
 //     const lexer = &parser.lexer;
 //     if (lexer.token.type == .op_star) {
 //         try lexer.skipTokenAndSpaceOrNewline();
@@ -804,7 +849,23 @@ pub fn parsePath2(
 // parseTypeArg
 // parseTypeSuffix
 // parseProcTypeOutput
-// makeNilableType
+
+pub fn makeNilableType(parser: *const Parser, t: Node) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const n = try Path.global(allocator, "Nil");
+    n.copyLocation(t);
+
+    var types = ArrayList(Node).init(allocator);
+    try types.append(t);
+    try types.append(n);
+
+    const u = try Union.node(allocator, types);
+    u.copyLocation(t);
+    return u;
+}
+
 // makeNilableExpression
 // makePointerType
 // makeStaticArrayType
@@ -1036,7 +1097,7 @@ pub fn pushVarName(parser: *Parser, name: []const u8) !void {
     try var_scopes[var_scopes.len - 1].put(name, {});
 }
 
-pub fn isVarInScope(parser: Parser, name: []const u8) bool {
+pub fn isVarInScope(parser: *const Parser, name: []const u8) bool {
     const var_scopes = parser.var_scopes.items;
     return var_scopes[var_scopes.len - 1].contains(name);
 }
@@ -1190,7 +1251,7 @@ pub fn unexpectedTokenInAtomic(parser: *Parser) error{ SyntaxError, OutOfMemory 
     return parser.unexpectedToken();
 }
 
-pub fn isVar(parser: Parser, name: []const u8) bool {
+pub fn isVar(parser: *const Parser, name: []const u8) bool {
     if (parser.in_macro_expression) return true;
 
     return std.mem.eql(u8, name, "self") or parser.isVarInScope(name);
@@ -1516,6 +1577,31 @@ pub fn main() !void {
     lexer = &parser.lexer;
     try lexer.skipToken();
     node = try parser.parseAtomic();
+    assert(node == .underscore);
+
+    // parseAtomicType
+    parser = try Parser.new("self");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicType();
+    assert(node == .self);
+
+    parser = try Parser.new("self?");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicType();
+    assert(node == .@"union");
+    assert(node.@"union".types.items.len == 2);
+    assert(node.@"union".types.items[0] == .self);
+    assert(node.@"union".types.items[1] == .path);
+    assert(node.@"union".types.items[1].path.is_global);
+    assert(node.@"union".types.items[1].path.names.items.len == 1);
+    assert(std.mem.eql(u8, "Nil", node.@"union".types.items[1].path.names.items[0]));
+
+    parser = try Parser.new("_");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicType();
     assert(node == .underscore);
 
     // p("{}\n", .{});

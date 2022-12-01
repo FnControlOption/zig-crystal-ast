@@ -1191,8 +1191,10 @@ pub const Path = struct {
 
     pub fn global(
         allocator: Allocator,
-        names: ArrayList([]const u8),
+        name: []const u8,
     ) !Node {
+        var names = ArrayList([]const u8).init(allocator);
+        try names.append(name);
         return node(allocator, names, true);
     }
 };
@@ -1432,17 +1434,20 @@ pub const Union = struct {
     end_location: ?Location = null,
 
     types: ArrayList(Node),
+
+    pub fn allocate(allocator: Allocator, types: ArrayList(Node)) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{ .types = types };
+        return instance;
+    }
+
+    pub fn node(allocator: Allocator, types: ArrayList(Node)) !Node {
+        return Node{ .@"union" = try allocate(allocator, types) };
+    }
 };
 
 pub const Self = Singleton("self");
 
-comptime {
-    // const allocator = std.heap.page_allocator;
-    // var control_expression_types = ArrayList(type).init(allocator);
-    // std.debug.print("{}\n", .{control_expression_types});
-    // @compileLog("foobar");
-    // @typeInfo(Fields).Struct.fields
-}
 inline fn ControlExpression(comptime name: []const u8) type {
     return struct {
         location: ?Location = null,
