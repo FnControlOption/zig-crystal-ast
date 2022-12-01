@@ -168,52 +168,56 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
     return parser;
 }
 
-// pub fn parse(parser: *Parser) !Node {
-//     const lexer = &parser.lexer;
-//     try lexer.skipTokenAndStatementEnd();
-//
-//     const value = try parser.parseExpressions();
-//     try parser.check(.eof);
-//     return value;
-// }
+pub fn parse(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    try lexer.skipTokenAndStatementEnd();
+
+    const node = try parser.parseExpressions();
+    try parser.check(.eof);
+    return node;
+}
 
 // parse(mode: ParseMode)
 
-// pub fn parseExpressions(parser: *Parser) !Node {
-//     const old_stop_on_do = parser.pushStopOnDo(false);
-//     defer parser.resetStopOnDo(old_stop_on_do);
-//     return parser.parseExpressionsInternal();
-// }
+pub fn parseExpressions(parser: *Parser) !Node {
+    const old_stop_on_do = parser.replaceStopOnDo(false);
+    defer _ = parser.replaceStopOnDo(old_stop_on_do);
+    return parser.parseExpressionsInternal();
+}
 
-// pub fn parseExpressionsInternal(parser: *Parser) !Node {
-//     const lexer = &parser.lexer;
-//     const allocator = lexer.allocator;
-//
-//     if (parser.isEndToken()) {
-//         return Nop.node(allocator);
-//     }
-//
-//     const exp = try parser.parseMultiAssign();
-//
-//     const lexer = &parser.lexer;
-//     lexer.slash_is_regex = true;
-//     try lexer.skipStatementEnd();
-//
-//     if (parser.isEndToken()) {
-//         return exp;
-//     }
-//
-//     var exps = ArrayList(Node).init(allocator);
-//     try exps.append(exp);
-//
-//     while (true) {
-//         try exps.append(try parser.parseMultiAssign());
-//         try lexer.skipStatementEnd();
-//         if (parser.isEndToken()) break;
-//     }
-//
-//     return Expressions.from(allocator, exps);
-// }
+pub fn parseExpressionsInternal(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    if (parser.isEndToken()) {
+        return Nop.node(allocator);
+    }
+
+    const exp = try parser.parseMultiAssign();
+
+    lexer.slash_is_regex = true;
+    try lexer.skipStatementEnd();
+
+    if (parser.isEndToken()) {
+        return exp;
+    }
+
+    var exps = ArrayList(Node).init(allocator);
+    try exps.append(exp);
+
+    while (true) {
+        try exps.append(try parser.parseMultiAssign());
+        try lexer.skipStatementEnd();
+        if (parser.isEndToken()) break;
+    }
+
+    return Expressions.from(allocator, exps);
+}
+
+pub fn parseMultiAssign(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseExpression();
+}
 
 // pub fn parseMultiAssign(parser: *Parser) !Node {
 //     const lexer = &parser.lexer;
@@ -360,32 +364,142 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //     return lhs;
 // }
 
-// pub fn parseExpression(parser: *Parser) !Node {
-//     _ = parser;
-//     return error.Unimplemented;
-// }
+pub fn parseExpression(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseOpAssign();
+}
 
 // parseExpressionSuffix
 // parseExpressionSuffix
 // parseOpAssignNoControl
-// parseOpAssign
-// parseQuestionColon
-// parseRange
+
+pub fn parseOpAssign(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseQuestionColon();
+}
+
+pub fn parseQuestionColon(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseRange();
+}
+
+pub fn parseRange(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseOr();
+}
+
 // newRange
-// inline fn parseOperator
-// parseOr
-// parseAnd
-// parseEquality
-// parseCmp
-// parseLogicalOr
-// parseLogicalAnd
-// parseShift
-// parseAddOrSub
-// parseMulOrDiv
-// parsePow
-// parsePrefix
+
+inline fn parseOperator(
+    parser: *Parser,
+    comptime name: []const u8,
+    comptime next_operator: []const u8,
+    comptime Operator: type,
+    comptime operators: []const Token.Kind,
+    comptime options: struct { right_associative: bool = false },
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+
+    const left_fn = @field(Parser, "parse" ++ next_operator);
+    var left = try @call(.{}, left_fn, .{parser});
+
+    const right_fn = if (options.right_associative)
+        @field(Parser, "parse" ++ name)
+    else
+        left_fn;
+
+    next_exp: while (true) {
+        if (lexer.token.type == .space) {
+            try lexer.skipToken();
+            continue;
+        }
+
+        inline for (operators) |op| {
+            if (lexer.token.type == op) {
+                // TODO: incorrect location for sub-expressions?
+                try parser.checkVoidValue(left, location);
+
+                const method = op.toString();
+                const name_location = lexer.token.location();
+
+                lexer.slash_is_regex = true;
+                try lexer.skipTokenAndSpaceOrNewline();
+                const right = try @call(.{}, right_fn, .{parser});
+                if (Operator == Call) {
+                    var args = ArrayList(Node).init(allocator);
+                    try args.append(right);
+                    left = try Call.node(allocator, left, method, args, .{
+                        .name_location = name_location,
+                    });
+                } else {
+                    left = try Operator.node(allocator, left, right);
+                }
+                left.setLocation(location);
+                left.copyEndLocation(right);
+                continue :next_exp;
+            }
+        }
+
+        return left;
+    }
+}
+
+pub fn parseOr(parser: *Parser) !Node {
+    return parser.parseOperator("Or", "And", Or, &.{.op_bar_bar}, .{});
+}
+
+pub fn parseAnd(parser: *Parser) !Node {
+    return parser.parseOperator("And", "Equality", And, &.{.op_amp_amp}, .{});
+}
+
+pub fn parseEquality(parser: *Parser) !Node {
+    return parser.parseOperator("Equality", "Cmp", Call, &.{ .op_lt, .op_lt_eq, .op_gt, .op_gt_eq, .op_lt_eq_gt }, .{});
+}
+
+pub fn parseCmp(parser: *Parser) !Node {
+    return parser.parseOperator("Cmp", "LogicalOr", Call, &.{ .op_eq_eq, .op_bang_eq, .op_eq_tilde, .op_bang_tilde, .op_eq_eq_eq }, .{});
+}
+
+pub fn parseLogicalOr(parser: *Parser) !Node {
+    return parser.parseOperator("LogicalOr", "LogicalAnd", Call, &.{ .op_bar, .op_caret }, .{});
+}
+
+pub fn parseLogicalAnd(parser: *Parser) !Node {
+    return parser.parseOperator("LogicalAnd", "Shift", Call, &.{.op_amp}, .{});
+}
+
+pub fn parseShift(parser: *Parser) !Node {
+    return parser.parseOperator("Shift", "AddOrSub", Call, &.{ .op_lt_lt, .op_gt_gt }, .{});
+}
+
+pub fn parseAddOrSub(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseMulOrDiv();
+}
+
+pub fn parseMulOrDiv(parser: *Parser) !Node {
+    return parser.parseOperator("MulOrDiv", "Pow", Call, &.{ .op_star, .op_slash, .op_slash_slash, .op_percent, .op_amp_star }, .{});
+}
+
+pub fn parsePow(parser: *Parser) !Node {
+    return parser.parseOperator("Pow", "Prefix", Call, &.{ .op_star_star, .op_amp_star_star }, .{ .right_associative = true });
+}
+
+pub fn parsePrefix(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseAtomicWithMethod();
+}
+
 // AtomicWithMethodCheck
-// parseAtomicWithMethod
+
+pub fn parseAtomicWithMethod(parser: *Parser) !Node {
+    // TODO: implement
+    return parser.parseAtomic();
+}
+
 // parseAtomicMethodSuffix
 // parseAtomicMethodSuffixSpecial
 // parseSingleArg
@@ -503,7 +617,7 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             receiver.setLocation(location);
             var args = ArrayList(Node).init(allocator);
             try args.append(try NumberLiteral.fromNumber(allocator, index));
-            const node = try Call.node(allocator, receiver, method, args);
+            const node = try Call.node(allocator, receiver, method, args, .{});
             try parser.skipNodeToken(node);
             return node;
         },
@@ -718,14 +832,10 @@ pub fn atNamedTupleStart(parser: *const Parser) bool {
 // parseVarOrCall
 // nextComesPlusOrMinus
 
-pub fn pushStopOnDo(parser: *Parser, new_value: bool) bool {
+pub fn replaceStopOnDo(parser: *Parser, new_value: bool) bool {
     const old_stop_on_do = parser.stop_on_do;
     parser.stop_on_do = new_value;
     return old_stop_on_do;
-}
-
-pub fn resetStopOnDo(parser: *Parser, old_value: bool) void {
-    parser.stop_on_do = old_value;
 }
 
 // parseBlock
@@ -1293,6 +1403,8 @@ pub fn canBeAssigned(node: Node) bool {
         },
         .call => |call| {
             // TODO: check if [] has parentheses?
+            // a = [:foo] * 3; a[0] = :bar; a.[](1) = :baz; p a
+            // a = [:foo] * 3; a[0] = :bar; a.[]=(1, :baz); p a
             return (call.obj == null and call.args.items.len == 0 and call.block == null) or std.mem.eql(u8, call.name, "[]");
         },
         else => {
@@ -1650,6 +1762,7 @@ pub fn main() !void {
             null,
             "foo",
             ArrayList(Node).init(lexer.allocator),
+            .{},
         )),
     );
     assert(
@@ -1663,6 +1776,7 @@ pub fn main() !void {
                 // try args.append(try Var.node(lexer.allocator, "fizz"));
                 break :blk args;
             },
+            .{},
         )),
     );
 
@@ -1777,8 +1891,7 @@ pub fn main() !void {
     // .string_array_start / parseStringArray
     parser = try Parser.new("%w[foo bar]");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .array_literal);
     var elements = node.array_literal.elements.items;
     assert(elements.len == 2);
@@ -1790,8 +1903,7 @@ pub fn main() !void {
     // .symbol_array_start / parseSymbolArray
     parser = try Parser.new("%i(foo bar)");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .array_literal);
     elements = node.array_literal.elements.items;
     assert(elements.len == 2);
@@ -1803,16 +1915,14 @@ pub fn main() !void {
     // .char
     parser = try Parser.new("'F'");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .char_literal);
     assert(node.char_literal.value == 'F');
 
     // .symbol
     parser = try Parser.new(":foo");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .symbol_literal);
     assert(std.mem.eql(u8, "foo", node.symbol_literal.value));
 
@@ -1846,8 +1956,7 @@ pub fn main() !void {
     // .global_match_data_index
     parser = try Parser.new("$123");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .call);
     assert(node.call.obj.? == .global);
     assert(std.mem.eql(u8, "$~", node.call.obj.?.global.name));
@@ -1859,18 +1968,14 @@ pub fn main() !void {
     // .magic_line
     parser = try Parser.new("\n __LINE__");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    try lexer.skipToken();
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .number_literal);
     assert(std.mem.eql(u8, "2", node.number_literal.value));
 
     // .underscore
     parser = try Parser.new("_");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .underscore);
 
     // parseAtomicType
@@ -1960,9 +2065,14 @@ pub fn main() !void {
     // parseEmptyArrayLiteral
     parser = try Parser.new("[] of self");
     lexer = &parser.lexer;
-    try lexer.skipToken();
-    node = try parser.parseAtomic();
+    node = try parser.parse();
     assert(node == .array_literal);
+
+    // parseOperator
+    parser = try Parser.new("'a' || 'b'");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .@"or");
 
     // p("{}\n", .{});
 

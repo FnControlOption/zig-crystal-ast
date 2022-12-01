@@ -726,6 +726,8 @@ pub const Call = struct {
     block: ?*Block = null,
     block_arg: ?Node = null,
     named_args: ?ArrayList(*NamedArgument) = null,
+    name_location: ?Location = null,
+    // name_size: ?usize = null,
     doc: ?[]const u8 = null,
     visibility: Visibility = .public,
     is_global: bool = false,
@@ -737,12 +739,16 @@ pub const Call = struct {
         obj: ?Node,
         name: []const u8,
         args: ArrayList(Node),
+        options: struct {
+            name_location: ?Location = null,
+        },
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .obj = obj,
             .name = name,
             .args = args,
+            .name_location = options.name_location,
         };
         return instance;
     }
@@ -752,8 +758,9 @@ pub const Call = struct {
         obj: ?Node,
         name: []const u8,
         args: ArrayList(Node),
+        options: anytype,
     ) !Node {
-        return Node{ .call = try allocate(allocator, obj, name, args) };
+        return Node{ .call = try allocate(allocator, obj, name, args, options) };
     }
 };
 

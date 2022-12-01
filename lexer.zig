@@ -1465,7 +1465,7 @@ pub fn symbol(lexer: *Lexer, value: []const u8, start: usize) void {
 // warnLargeUint64Literal
 
 fn scanNumber(lexer: *Lexer, start: usize, negative: bool) !void {
-    // TODO
+    // TODO: implement
     lexer.token.type = .number;
     while (std.ascii.isDigit(lexer.nextChar())) {}
     lexer.setTokenRawFromStart(start);
