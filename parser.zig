@@ -851,7 +851,21 @@ pub fn parsePath2(
 //     parseUnionType
 // }
 
-// parseTypeArg
+pub fn parseTypeArg(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    if (lexer.token.type == .number) {
+        const value = lexer.token.value.string;
+        const kind = lexer.token.number_kind;
+        const num = try NumberLiteral.node(allocator, value, kind);
+        num.setLocation(lexer.token.location());
+        try lexer.skipTokenAndSpace();
+        return num;
+    }
+
+    return parser.unexpectedToken(); // TODO
+}
 
 pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
     const lexer = &parser.lexer;
@@ -880,7 +894,12 @@ pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
                 t.* = try parser.makePointerType(t.*);
             },
             .op_lsquare => {
-                return parser.unexpectedToken(); // TODO
+                try lexer.skipTokenAndSpaceOrNewline();
+                const size = try parser.parseTypeArg();
+                try lexer.skipSpaceOrNewline();
+                try parser.check(.op_rsquare);
+                try lexer.skipTokenAndSpace();
+                t.* = try parser.makeStaticArrayType(t.*, size);
             },
             else => {
                 return;
@@ -919,12 +938,31 @@ pub fn makePointerType(parser: *const Parser, t: Node) !Node {
     var type_vars = ArrayList(Node).init(allocator);
     try type_vars.append(t);
 
-    const generic = try Generic.node(allocator, pointer, type_vars);
+    const generic = try Generic.node(allocator, pointer, type_vars, .{
+        .suffix = .asterisk,
+    });
     generic.copyLocation(t);
     return generic;
 }
 
-// makeStaticArrayType
+pub fn makeStaticArrayType(parser: *const Parser, t: Node, size: Node) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const static_array = try Path.global(allocator, "StaticArray");
+    static_array.copyLocation(t);
+
+    var type_vars = ArrayList(Node).init(allocator);
+    try type_vars.append(t);
+    try type_vars.append(size);
+
+    const generic = try Generic.node(allocator, static_array, type_vars, .{
+        .suffix = .bracket,
+    });
+    generic.copyLocation(t);
+    return generic;
+}
+
 // makeTupleType
 // makeNamedTupleType
 // isTypeStart
@@ -1660,7 +1698,7 @@ pub fn main() !void {
     node = try parser.parseAtomicTypeWithSuffix();
     assert(node == .underscore);
 
-    // parseTypeSuffix
+    // makePointerType
     parser = try Parser.new("self*");
     lexer = &parser.lexer;
     try lexer.skipToken();
@@ -1685,6 +1723,18 @@ pub fn main() !void {
     assert(node.generic.name.path.is_global);
     assert(std.mem.eql(u8, "Pointer", node.generic.name.path.names.items[0]));
     assert(node.generic.type_vars.items[0] == .self);
+
+    // makeStaticArrayType
+    parser = try Parser.new("self[123]");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomicTypeWithSuffix();
+    assert(node == .generic);
+    assert(node.generic.name == .path);
+    assert(node.generic.name.path.is_global);
+    assert(std.mem.eql(u8, "StaticArray", node.generic.name.path.names.items[0]));
+    assert(node.generic.type_vars.items[0] == .self);
+    assert(node.generic.type_vars.items[1] == .number_literal);
 
     // p("{}\n", .{});
 

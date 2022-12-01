@@ -487,7 +487,7 @@ pub const ArrayLiteral = struct {
     pub fn allocate(
         allocator: Allocator,
         elements: ArrayList(Node),
-        args: struct {
+        options: struct {
             of: ?Node = null,
             name: ?Node = null,
         },
@@ -495,8 +495,8 @@ pub const ArrayLiteral = struct {
         var instance = try allocator.create(@This());
         instance.* = .{
             .elements = elements,
-            .of = args.of,
-            .name = args.name,
+            .of = options.of,
+            .name = options.name,
         };
         return instance;
     }
@@ -504,17 +504,17 @@ pub const ArrayLiteral = struct {
     pub fn node(
         allocator: Allocator,
         elements: ArrayList(Node),
-        args: anytype,
+        options: anytype,
     ) !Node {
         return Node{
-            .array_literal = try allocate(allocator, elements, args),
+            .array_literal = try allocate(allocator, elements, options),
         };
     }
 
     pub fn map(
         allocator: Allocator,
         values: anytype,
-        args: struct {
+        options: struct {
             of: ?Node = null,
         },
         block: anytype,
@@ -524,7 +524,7 @@ pub const ArrayLiteral = struct {
         for (values.items) |value| {
             new_values.appendAssumeCapacity(try block(allocator, value));
         }
-        return node(allocator, new_values, .{ .of = args.of });
+        return node(allocator, new_values, .{ .of = options.of });
     }
 
     pub fn mapWithIndex(
@@ -1341,7 +1341,7 @@ pub const Generic = struct {
     name: Node,
     type_vars: ArrayList(Node),
     names_args: ?ArrayList(*NamedArgument) = null,
-    suffix: Suffix = .none,
+    suffix: Suffix,
 
     pub const Suffix = enum {
         none,
@@ -1354,11 +1354,15 @@ pub const Generic = struct {
         allocator: Allocator,
         name: Node,
         type_vars: ArrayList(Node),
+        options: struct {
+            suffix: Suffix = .none,
+        },
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .type_vars = type_vars,
+            .suffix = options.suffix,
         };
         return instance;
     }
@@ -1367,8 +1371,9 @@ pub const Generic = struct {
         allocator: Allocator,
         name: Node,
         type_vars: ArrayList(Node),
+        options: anytype,
     ) !Node {
-        return Node{ .generic = try allocate(allocator, name, type_vars) };
+        return Node{ .generic = try allocate(allocator, name, type_vars, options) };
     }
 };
 
