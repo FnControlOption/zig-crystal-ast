@@ -496,6 +496,11 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             try parser.skipNodeToken(node);
             return node;
         },
+        .magic_line => {
+            const node = try MagicConstant.expandLineNode(allocator, lexer.token.location());
+            try parser.skipNodeToken(node);
+            return node;
+        },
         // TODO
         else => {
             return parser.unexpectedTokenInAtomic();
@@ -1486,6 +1491,16 @@ pub fn main() !void {
     assert(node.call.args.items.len == 1);
     assert(node.call.args.items[0] == .number_literal);
     assert(std.mem.eql(u8, "123", node.call.args.items[0].number_literal.value));
+
+    // .magic_line
+    parser = try Parser.new("\n __LINE__");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    try lexer.skipToken();
+    try lexer.skipToken();
+    node = try parser.parseAtomic();
+    assert(node == .number_literal);
+    assert(std.mem.eql(u8, "2", node.number_literal.value));
 
     // p("{}\n", .{});
 

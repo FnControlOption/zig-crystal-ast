@@ -1720,6 +1720,20 @@ pub const MagicConstant = struct {
     end_location: ?Location = null,
 
     name: []const u8, // Symbol
+
+    pub fn expandLineNode(
+        allocator: Allocator,
+        location: ?Location,
+    ) !Node {
+        return NumberLiteral.fromNumber(allocator, try expandLine(location));
+    }
+
+    pub fn expandLine(location: ?Location) !i32 {
+        if (location) |loc| {
+            return std.math.cast(i32, loc.line_number) orelse error.Overflow;
+        }
+        return 0;
+    }
 };
 
 pub const Asm = struct {
