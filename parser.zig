@@ -421,6 +421,10 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
     const allocator = lexer.allocator;
     switch (lexer.token.type) {
         // TODO
+        .op_lsquare_rsquare => {
+            return parser.parseEmptyArrayLiteral();
+        },
+        // TODO
         .char => {
             const value = lexer.token.value.char;
             const node = try CharLiteral.node(allocator, value);
@@ -629,24 +633,29 @@ pub fn parseStringOrSymbolArray(
         }
     }
 
-    return ArrayLiteral.node(allocator, strings, .{
-        .of = try Path.global(allocator, elements_type),
-    });
+    const of = try Path.global(allocator, elements_type);
+    return ArrayLiteral.node(allocator, strings, .{ .of = of });
 }
 
-// pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
-//     const lexer = &parser.lexer;
-//     const line = lexer.line_number;
-//     const column = lexer.token.column_number;
-//
-//     try lexer.skipTokenAndSpace();
-//     if (lexer.token.isKeyword(.of)) {
-//         try lexer.skipTokenAndSpaceOrNewline();
-//         const of =
-//     } else {
-//         return lexer.raiseAt("for empty arrays use '[] of ElementType'", line, column);
-//     }
-// }
+pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const line = lexer.line_number;
+    const column = lexer.token.column_number;
+
+    try lexer.skipTokenAndSpace();
+    if (lexer.token.isKeyword(.of)) {
+        try lexer.skipTokenAndSpaceOrNewline();
+        const of = try parser.parseBareProcType();
+        const elements = ArrayList(Node).init(allocator);
+        const node = try ArrayLiteral.node(allocator, elements, .{ .of = of });
+        node.copyEndLocation(of);
+        return node;
+    } else {
+        return lexer.raiseAt("for empty arrays use '[] of ElementType'", line, column);
+    }
+}
 
 // parseArrayLiteral
 // parseHashOrTupleLiteral
@@ -732,18 +741,38 @@ pub fn resetStopOnDo(parser: *Parser, old_value: bool) void {
 
 pub fn parseBareProcType(parser: *Parser) !Node {
     const lexer = &parser.lexer;
-    const t = try parser.parseUnionTypeSplat();
+    const allocator = lexer.allocator;
 
-    if (lexer.token.type != .op_minus_gt and
-        (lexer.token.type != .op_comma or !try parser.atTypeStart(.{ .consume_newlines = true })))
-    {
-        if (t == .splat) {
-            return lexer.raiseLoc("invalid type splat", t.location().?);
+    const first_type = try parser.parseTypeSplatUnionType();
+
+    if (blk: {
+        const has_another_type =
+            lexer.token.type == .op_comma and
+            try parser.atTypeStart(.{ .consume_newlines = true });
+        break :blk lexer.token.type != .op_minus_gt and
+            !has_another_type;
+    }) {
+        if (first_type == .splat) {
+            return lexer.raiseLoc("invalid type splat", first_type.location().?);
         }
-        return t;
+        return first_type;
     }
 
-    return parser.unexpectedToken(); // TODO
+    var input_types = ArrayList(Node).init(allocator);
+    try input_types.append(first_type);
+
+    if (lexer.token.type != .op_minus_gt) {
+        while (true) {
+            try lexer.skipTokenAndSpaceOrNewline();
+            try input_types.append(try parser.parseTypeSplatUnionType());
+            const has_another_type =
+                lexer.token.type == .op_comma and
+                try parser.atTypeStart(.{ .consume_newlines = true });
+            if (!has_another_type) break;
+        }
+    }
+
+    return parser.parseProcTypeOutput(input_types, first_type.location());
 }
 
 pub fn parseUnionType(parser: *Parser) !Node {
@@ -876,7 +905,7 @@ pub fn consumeTypeSplatStar(parser: *Parser) !bool {
     }
 }
 
-pub fn parseUnionTypeSplat(parser: *Parser) !Node {
+pub fn parseTypeSplatUnionType(parser: *Parser) !Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
@@ -906,15 +935,15 @@ pub fn parseTypeArg(parser: *Parser) ParseTypeArgError!Node {
         return num;
     }
 
-    switch (lexer.token.value) {
-        .keyword => |keyword| {
-            switch (keyword) {
-                // TODO
-                else => {},
-            }
-        },
-        else => {},
-    }
+    // TODO
+    // switch (lexer.token.value) {
+    //     .keyword => |keyword| {
+    //         switch (keyword) {
+    //             else => {},
+    //         }
+    //     },
+    //     else => {},
+    // }
     return parser.parseUnionType();
 }
 
@@ -959,7 +988,29 @@ pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
     }
 }
 
-// parseProcTypeOutput
+pub fn parseProcTypeOutput(
+    parser: *Parser,
+    input_types: ArrayList(Node),
+    location: ?Location,
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const has_output_type = try parser.atTypeStart(.{ .consume_newlines = false });
+
+    try parser.check(.op_minus_gt);
+    try lexer.skipTokenAndSpace();
+
+    var output_type: ?Node = null;
+    if (has_output_type) {
+        try lexer.skipSpaceOrNewline();
+        output_type = try parser.parseUnionType();
+    }
+
+    const node = try ProcNotation.node(allocator, input_types, output_type);
+    node.setLocation(location);
+    return node;
+}
 
 pub fn makeNilableType(parser: *const Parser, t: Node) !Node {
     const lexer = &parser.lexer;
@@ -1894,6 +1945,24 @@ pub fn main() !void {
     assert(node.@"union".types.items.len == 2);
     assert(node.@"union".types.items[0] == .self);
     assert(node.@"union".types.items[1] == .underscore);
+
+    // parseProcTypeOutput
+    parser = try Parser.new("self, _ -> self");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseBareProcType();
+    assert(node == .proc_notation);
+    assert(node.proc_notation.inputs.?.items.len == 2);
+    assert(node.proc_notation.inputs.?.items[0] == .self);
+    assert(node.proc_notation.inputs.?.items[1] == .underscore);
+    assert(node.proc_notation.output.? == .self);
+
+    // parseEmptyArrayLiteral
+    parser = try Parser.new("[] of self");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseAtomic();
+    assert(node == .array_literal);
 
     // p("{}\n", .{});
 

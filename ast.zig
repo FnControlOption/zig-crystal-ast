@@ -945,6 +945,27 @@ pub const ProcNotation = struct {
 
     inputs: ?ArrayList(Node) = null,
     output: ?Node = null,
+
+    pub fn allocate(
+        allocator: Allocator,
+        inputs: ?ArrayList(Node),
+        output: ?Node,
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .inputs = inputs,
+            .output = output,
+        };
+        return instance;
+    }
+
+    pub fn node(
+        allocator: Allocator,
+        inputs: ?ArrayList(Node),
+        output: ?Node,
+    ) !Node {
+        return Node{ .proc_notation = try allocate(allocator, inputs, output) };
+    }
 };
 
 pub const Def = struct {
