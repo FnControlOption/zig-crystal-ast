@@ -117,8 +117,6 @@ const Unclosed = struct {
     }
 };
 
-allocator: Allocator,
-
 lexer: Lexer,
 visibility: ?Visibiity = null,
 block_arg_name: ?[]const u8 = null,
@@ -155,7 +153,6 @@ fn new(string: []const u8) !Parser {
 
 pub fn init(allocator: Allocator, string: []const u8) !Parser {
     var parser = Parser{
-        .allocator = allocator,
         .lexer = Lexer.init(allocator, string),
         .var_scopes = ArrayList(StringHashMap(void)).init(allocator),
         .unclosed_stack = ArrayList(Unclosed).init(allocator),
@@ -184,8 +181,11 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 // }
 
 // pub fn parseExpressionsInternal(parser: *Parser) !Node {
+//     const lexer = &parser.lexer;
+//     const allocator = lexer.allocator;
+//
 //     if (parser.isEndToken()) {
-//         return Nop.node(parser.allocator);
+//         return Nop.node(allocator);
 //     }
 //
 //     const exp = try parser.parseMultiAssign();
@@ -198,7 +198,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //         return exp;
 //     }
 //
-//     var exps = ArrayList(Node).init(parser.allocator);
+//     var exps = ArrayList(Node).init(allocator);
 //     try exps.append(exp);
 //
 //     while (true) {
@@ -207,11 +207,12 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //         if (parser.isEndToken()) break;
 //     }
 //
-//     return Expressions.from(parser.allocator, exps);
+//     return Expressions.from(allocator, exps);
 // }
 
 // pub fn parseMultiAssign(parser: *Parser) !Node {
 //     const lexer = &parser.lexer;
+//     const allocator = lexer.allocator;
 //     const location = lexer.token.location();
 //
 //     var lhs_splat_index: ?usize = null;
@@ -238,7 +239,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //         },
 //     }
 //
-//     var exps = ArrayList(Node).init(parser.allocator);
+//     var exps = ArrayList(Node).init(allocator);
 //     try exps.append(last);
 //
 //     var i: usize = 0;
@@ -253,7 +254,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //     }
 //
 //     if (possible_assign_index) |assign_index| {
-//         var targets = ArrayList(Node).initCapacity(parser.allocator, assign_index);
+//         var targets = ArrayList(Node).initCapacity(allocator, assign_index);
 //         var target_index: usize = 0;
 //         while (target_index < assign_index) : (target_index += 1) {
 //             const exp = exps.items[target_index];
@@ -261,7 +262,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 //         }
 //
 //         var assign_exp = exps.items[assign_index];
-//         var values = ArrayList(Node).init(parser.allocator);
+//         var values = ArrayList(Node).init(allocator);
 //
 //         switch (assign_exp) {
 //             .assign => |assign| {
@@ -328,8 +329,8 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
 // }
 
 // pub fn multiassignLeftHand(parser: *Parser, exp: Node) Node {
-//     allocator = parser.allocator;
 //     const lexer = &parser.lexer;
+//     const allocator = lexer.allocator;
 //     var lhs = exp;
 //     switch (exp) {
 //         .path => |path| {
@@ -411,8 +412,8 @@ pub fn parseAtomic(parser: *Parser) !Node {
 }
 
 pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
-    const allocator = parser.allocator;
     const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
     switch (lexer.token.type) {
         // TODO
         .char => {
@@ -595,8 +596,8 @@ pub fn parseStringOrSymbolArray(
     comptime StringOrSymbolLiteral: type,
     elements_type: []const u8,
 ) !Node {
-    const allocator = parser.allocator;
     const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
 
     var strings = ArrayList(Node).init(allocator);
 
@@ -746,8 +747,8 @@ pub fn parsePath2(
     is_global: bool,
     location: Location,
 ) !Node {
-    const allocator = parser.allocator;
     const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
 
     var names = ArrayList([]const u8).init(allocator);
     try names.append(try parser.checkConst());
@@ -789,8 +790,8 @@ pub fn parsePath2(
 //     location: Location,
 //     splat: bool,
 // ) !Node {
-//     const allocator = parser.allocator;
 //     const lexer = &parser.lexer;
+//     const allocator = lexer.allocator;
 //     const location = lexer.token.location();
 //     // if (splat) {
 //     //     const node = try Splat.node(allocator, type_);
@@ -858,8 +859,8 @@ pub fn parsePath2(
 //     parser: *Parser,
 //     exps: ArrayList(Node),
 // ) void {
-//     const allocator = parser.allocator;
 //     const lexer = &parser.lexer;
+//     const allocator = lexer.allocator;
 //
 //     var vars = ArrayList(Node).init(allocator);
 //
@@ -981,7 +982,8 @@ pub fn consumeDefEqualsSignSkipSpace(parser: *Parser) !bool {
 }
 
 pub fn createIsolatedVarScope(parser: *Parser) !void {
-    const scope = StringHashMap(void).init(parser.allocator);
+    const allocator = parser.lexer.allocator;
+    const scope = StringHashMap(void).init(allocator);
     try parser.var_scopes.append(scope);
 }
 
@@ -1082,12 +1084,13 @@ pub fn checkVoidExpressionKeyword(parser: *Parser) !void {
 
 pub fn checkAny(parser: *Parser, token_types: []const Token.Kind) !void {
     const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
     for (token_types) |token_type| {
         if (lexer.token.type == token_type) {
             return;
         }
     }
-    var buffer = ArrayList(u8).init(parser.allocator);
+    var buffer = ArrayList(u8).init(allocator);
     try buffer.appendSlice("expecting any of these tokens: ");
     var first = true;
     for (token_types) |token_type| {
@@ -1105,9 +1108,10 @@ pub fn checkAny(parser: *Parser, token_types: []const Token.Kind) !void {
 
 pub fn check(parser: *Parser, token_type: Token.Kind) !void {
     const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
     if (token_type != lexer.token.type) {
         const message = try std.fmt.allocPrint(
-            parser.allocator,
+            allocator,
             "expecting token '{}', not '{}'",
             .{ token_type, lexer.token },
         );
@@ -1117,8 +1121,9 @@ pub fn check(parser: *Parser, token_type: Token.Kind) !void {
 
 pub fn checkIdentKeyword(parser: *Parser, value: Keyword) !void {
     const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
     if (!lexer.token.isKeyword(value)) {
-        const message = try std.fmt.allocPrint(parser.allocator, "expecting identifier '{}', not '{}'", .{ value, lexer.token });
+        const message = try std.fmt.allocPrint(allocator, "expecting identifier '{}', not '{}'", .{ value, lexer.token });
         return lexer.raiseFor(message, lexer.token);
     }
 }
@@ -1149,7 +1154,8 @@ pub fn unexpectedToken(parser: *Parser) error{ SyntaxError, OutOfMemory } {
 
 pub fn unexpectedTokenMsg(parser: *Parser, msg: ?[]const u8) error{ SyntaxError, OutOfMemory } {
     const lexer = &parser.lexer;
-    var buffer = ArrayList(u8).init(parser.allocator);
+    const allocator = lexer.allocator;
+    var buffer = ArrayList(u8).init(allocator);
     var writer = buffer.writer();
     try writer.writeAll("unexpected token: ");
     if (lexer.token.type == .eof) {
@@ -1169,11 +1175,12 @@ pub fn unexpectedTokenMsg(parser: *Parser, msg: ?[]const u8) error{ SyntaxError,
 
 pub fn unexpectedTokenInAtomic(parser: *Parser) error{ SyntaxError, OutOfMemory } {
     const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
     const unclosed_stack = parser.unclosed_stack.items;
     if (unclosed_stack.len > 0) {
         const unclosed = unclosed_stack[unclosed_stack.len - 1];
         const message = try std.fmt.allocPrint(
-            parser.allocator,
+            allocator,
             "unterminated {s}",
             .{unclosed.name},
         );
@@ -1202,7 +1209,8 @@ pub fn resetVisibility(parser: *Parser, old_value: ?Visibiity) void {
 // nextToken
 
 pub fn tempArgName(parser: *Parser) ![]const u8 {
-    const arg_name = try std.fmt.allocPrint(parser.allocator, "__arg{}", .{parser.temp_arg_count});
+    const allocator = parser.lexer.allocator;
+    const arg_name = try std.fmt.allocPrint(allocator, "__arg{}", .{parser.temp_arg_count});
     parser.temp_arg_count += 1;
     return arg_name;
 }
@@ -1226,10 +1234,10 @@ pub fn main() !void {
 
     assert(parser.isVarInScope("fizz") == false);
     assert(parser.isVarInScope("buzz") == false);
-    try parser.pushVar(try Var.node(parser.allocator, "fizz"));
+    try parser.pushVar(try Var.node(lexer.allocator, "fizz"));
     try parser.pushVars(blk: {
-        var vars = ArrayList(Node).init(parser.allocator);
-        try vars.append(try Var.node(parser.allocator, "buzz"));
+        var vars = ArrayList(Node).init(lexer.allocator);
+        try vars.append(try Var.node(lexer.allocator, "buzz"));
         break :blk vars;
     });
     assert(parser.isVarInScope("fizz"));
@@ -1280,24 +1288,24 @@ pub fn main() !void {
         }));
     }
 
-    assert(canBeAssigned(try Var.node(parser.allocator, "foo")));
+    assert(canBeAssigned(try Var.node(lexer.allocator, "foo")));
     assert(
         canBeAssigned(try Call.node(
-            parser.allocator,
+            lexer.allocator,
             null,
             "foo",
-            ArrayList(Node).init(parser.allocator),
+            ArrayList(Node).init(lexer.allocator),
         )),
     );
     assert(
         canBeAssigned(try Call.node(
-            parser.allocator,
-            try Var.node(parser.allocator, "foo"),
+            lexer.allocator,
+            try Var.node(lexer.allocator, "foo"),
             "[]",
             blk: {
-                var args = ArrayList(Node).init(parser.allocator);
-                try args.append(try Var.node(parser.allocator, "bar"));
-                // try args.append(try Var.node(parser.allocator, "fizz"));
+                var args = ArrayList(Node).init(lexer.allocator);
+                try args.append(try Var.node(lexer.allocator, "bar"));
+                // try args.append(try Var.node(lexer.allocator, "fizz"));
                 break :blk args;
             },
         )),
@@ -1307,7 +1315,7 @@ pub fn main() !void {
     lexer = &parser.lexer;
     try lexer.skipToken();
     var token_end_location = lexer.tokenEndLocation();
-    var node = try Var.node(parser.allocator, "foo");
+    var node = try Var.node(lexer.allocator, "foo");
     try parser.skipNodeToken(node);
     assert(node.endLocation().?.compare(.eq, token_end_location));
 
@@ -1359,7 +1367,7 @@ pub fn main() !void {
     _ = try parser.checkVoidExpressionKeyword();
 
     if (parser.checkVoidValue(
-        try Return.node(parser.allocator),
+        try Return.node(lexer.allocator),
         Location.new(null, 0, 0),
     )) |_| unreachable else |err| {
         assert(err == error.SyntaxError);
