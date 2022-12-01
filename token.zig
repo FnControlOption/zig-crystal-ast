@@ -327,6 +327,18 @@ pub const Value = union(enum) {
     string: []const u8,
     keyword: Keyword,
     none,
+
+    pub fn isAnyKeyword(value: Value) bool {
+        return value == .keyword;
+    }
+
+    pub fn isKeyword(value: Value, keyword: Keyword) bool {
+        return value == .keyword and value.keyword == keyword;
+    }
+
+    pub fn isString(value: Value, string: []const u8) bool {
+        return value == .string and std.mem.eql(u8, value.string, string);
+    }
 };
 
 type: Kind = .eof,
@@ -444,11 +456,11 @@ pub fn location(token: *Token) Location {
 }
 
 pub fn isAnyKeyword(token: Token) bool {
-    return token.type == .ident and token.value == .keyword;
+    return token.type == .ident and token.value.isAnyKeyword();
 }
 
 pub fn isKeyword(token: Token, keyword: Keyword) bool {
-    return token.isAnyKeyword() and token.value.keyword == keyword;
+    return token.type == .ident and token.value.isKeyword(keyword);
 }
 
 pub fn toString(token: Token, writer: anytype) !void {

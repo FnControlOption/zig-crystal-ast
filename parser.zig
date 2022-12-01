@@ -5,6 +5,11 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
 
+const Utf8EncodeError = error{
+    CodepointTooLarge,
+    Utf8CannotEncodeSurrogateHalf,
+};
+
 const Lexer = @import("lexer.zig");
 const Location = @import("location.zig");
 const Token = @import("token.zig");
@@ -646,7 +651,15 @@ pub fn parseStringOrSymbolArray(
 // parseArrayLiteral
 // parseHashOrTupleLiteral
 // parseHashLiteral
-// atNamedTupleStart
+
+pub fn atNamedTupleStart(parser: *const Parser) bool {
+    const lexer = &parser.lexer;
+    return switch (lexer.token.type) {
+        .ident, .@"const" => lexer.currentChar() == ':' and lexer.peekNextChar() != ':',
+        else => false,
+    };
+}
+
 // atStringLiteralStart
 // parseTuple
 // newHashLiteral
@@ -716,8 +729,46 @@ pub fn resetStopOnDo(parser: *Parser, old_value: bool) void {
 // parseCallArg
 // parseOut
 // parseGenericOrGlobalCall
-// parseBareProcType
-// parseUnionType
+
+pub fn parseBareProcType(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const t = try parser.parseUnionTypeSplat();
+
+    if (lexer.token.type != .op_minus_gt and
+        (lexer.token.type != .op_comma or !try parser.atTypeStart(.{ .consume_newlines = true })))
+    {
+        if (t == .splat) {
+            return lexer.raiseLoc("invalid type splat", t.location().?);
+        }
+        return t;
+    }
+
+    return parser.unexpectedToken(); // TODO
+}
+
+pub fn parseUnionType(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const first_type = try parser.parseAtomicTypeWithSuffix();
+    if (lexer.token.type != .op_bar) return first_type;
+
+    var types = ArrayList(Node).init(allocator);
+    try types.append(first_type);
+
+    var last_type: Node = undefined;
+    while (true) {
+        try lexer.skipTokenAndSpaceOrNewline();
+        last_type = try parser.parseAtomicTypeWithSuffix();
+        try types.append(last_type);
+        if (lexer.token.type != .op_bar) break;
+    }
+
+    const u = try Union.node(allocator, types);
+    u.copyLocation(first_type);
+    u.copyEndLocation(last_type);
+    return u;
+}
 
 pub fn parseAtomicTypeWithSuffix(parser: *Parser) !Node {
     var t = try parser.parseAtomicType();
@@ -732,30 +783,20 @@ pub fn parseAtomicType(parser: *Parser) !Node {
 
     switch (lexer.token.type) {
         .ident => {
-            switch (lexer.token.value) {
-                .keyword => |keyword| {
-                    switch (keyword) {
-                        .self => {
-                            try lexer.skipTokenAndSpace();
-                            const node = try Self.node(allocator);
-                            node.setLocation(location);
-                            return node;
-                        },
-                        .typeof => {
-                            // TODO
-                        },
-                        else => {},
-                    }
-                },
-                .string => |string| {
-                    if (std.mem.eql(u8, string, "self?")) {
-                        try lexer.skipTokenAndSpace();
-                        const node = try Self.node(allocator);
-                        node.setLocation(location);
-                        return parser.makeNilableType(node);
-                    }
-                },
-                else => {},
+            if (lexer.token.value.isKeyword(.self)) {
+                try lexer.skipTokenAndSpace();
+                const node = try Self.node(allocator);
+                node.setLocation(location);
+                return node;
+            }
+            if (lexer.token.value.isString("self?")) {
+                try lexer.skipTokenAndSpace();
+                const node = try Self.node(allocator);
+                node.setLocation(location);
+                return parser.makeNilableType(node);
+            }
+            if (lexer.token.value.isKeyword(.typeof)) {
+                // TODO
             }
             return parser.unexpectedToken();
         },
@@ -825,33 +866,34 @@ pub fn parsePath2(
 // parseTypeArgs
 // parseNamedTypeArgs
 
-// pub fn consumeTypeSplatStar(parser: *Parser) bool {
-//     const lexer = &parser.lexer;
-//     if (lexer.token.type == .op_star) {
-//         try lexer.skipTokenAndSpaceOrNewline();
-//         return true;
-//     } else {
-//         return false;
-//     }
-// }
+pub fn consumeTypeSplatStar(parser: *Parser) !bool {
+    const lexer = &parser.lexer;
+    if (lexer.token.type == .op_star) {
+        try lexer.skipTokenAndSpaceOrNewline();
+        return true;
+    } else {
+        return false;
+    }
+}
 
-// pub fn parseUnionTypeSplat(
-//     type_: Node,
-//     location: Location,
-//     splat: bool,
-// ) !Node {
-//     const lexer = &parser.lexer;
-//     const allocator = lexer.allocator;
-//     const location = lexer.token.location();
-//     // if (splat) {
-//     //     const node = try Splat.node(allocator, type_);
-//     //     node.setLocation(location);
-//     //     return node;
-//     // }
-//     parseUnionType
-// }
+pub fn parseUnionTypeSplat(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
 
-pub fn parseTypeArg(parser: *Parser) !Node {
+    const location = lexer.token.location();
+    const splat = try parser.consumeTypeSplatStar();
+
+    const t = try parser.parseUnionType();
+    if (splat) {
+        const node = try Splat.node(allocator, t);
+        node.setLocation(location);
+        return node;
+    }
+    return t;
+}
+
+const ParseTypeArgError = error{SyntaxError} || Allocator.Error || Utf8EncodeError;
+pub fn parseTypeArg(parser: *Parser) ParseTypeArgError!Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
@@ -864,7 +906,16 @@ pub fn parseTypeArg(parser: *Parser) !Node {
         return num;
     }
 
-    return parser.unexpectedToken(); // TODO
+    switch (lexer.token.value) {
+        .keyword => |keyword| {
+            switch (keyword) {
+                // TODO
+                else => {},
+            }
+        },
+        else => {},
+    }
+    return parser.parseUnionType();
 }
 
 pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
@@ -903,7 +954,7 @@ pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
             },
             else => {
                 return;
-            }
+            },
         }
     }
 }
@@ -965,10 +1016,108 @@ pub fn makeStaticArrayType(parser: *const Parser, t: Node, size: Node) !Node {
 
 // makeTupleType
 // makeNamedTupleType
-// isTypeStart
-// isTypeStart
-// isTypePathStart
-// isDelimiterOrTypeSuffix
+
+pub fn atTypeStart(
+    parser: *Parser,
+    options: struct { consume_newlines: bool },
+) !bool {
+    const lexer = &parser.lexer;
+    lexer.startPeekAhead();
+    defer lexer.endPeekAhead();
+
+    if (options.consume_newlines) {
+        try lexer.skipTokenAndSpaceOrNewline();
+    } else {
+        try lexer.skipTokenAndSpace();
+    }
+
+    return parser.findTypeStart();
+}
+
+fn findTypeStart(parser: *Parser) !bool {
+    const lexer = &parser.lexer;
+
+    while (lexer.token.type == .op_lparen or
+        lexer.token.type == .op_lcurly)
+    {
+        try lexer.skipTokenAndSpaceOrNewline();
+    }
+
+    // TODO: the below conditions are not complete, and there are many false-positive or true-negative examples.
+
+    switch (lexer.token.type) {
+        .ident => {
+            if (parser.atNamedTupleStart()) {
+                return false;
+            }
+            if (lexer.token.value.isKeyword(.typeof)) {
+                return true;
+            }
+            if (lexer.token.value.isKeyword(.self) or
+                lexer.token.value.isString("self?"))
+            {
+                try lexer.skipTokenAndSpace();
+                return parser.findDelimiterOrTypeSuffix();
+            }
+            return false;
+        },
+        .@"const" => {
+            if (parser.atNamedTupleStart()) {
+                return false;
+            }
+            return parser.findTypePathStart();
+        },
+        .op_colon_colon => {
+            try lexer.skipToken();
+            return parser.findTypePathStart();
+        },
+        .underscore, .op_minus_gt => {
+            return true;
+        },
+        .op_star => {
+            try lexer.skipTokenAndSpaceOrNewline();
+            return parser.findTypeStart();
+        },
+        else => {
+            return false;
+        },
+    }
+}
+
+fn findTypePathStart(parser: *Parser) !bool {
+    const lexer = &parser.lexer;
+
+    while (lexer.token.type == .@"const") {
+        try lexer.skipToken();
+        if (lexer.token.type != .op_colon_colon) break;
+        try lexer.skipTokenAndSpaceOrNewline();
+    }
+
+    try lexer.skipSpace();
+    return parser.findDelimiterOrTypeSuffix();
+}
+
+fn findDelimiterOrTypeSuffix(parser: *Parser) !bool {
+    const lexer = &parser.lexer;
+    switch (lexer.token.type) {
+        .op_period => {
+            try lexer.skipTokenAndSpaceOrNewline();
+            return lexer.token.isKeyword(.class);
+        },
+        .op_question, .op_star, .op_star_star => {
+            try lexer.skipTokenAndSpace();
+            return parser.findDelimiterOrTypeSuffix();
+        },
+        // zig fmt: off
+        .op_minus_gt, .op_bar, .op_comma, .op_eq_gt, .newline, .eof,
+        .op_eq, .op_semicolon, .op_lparen, .op_rparen, .op_lsquare, .op_rsquare
+        // -> | , => \n EOF = ; ( ) [ ]
+        // zig fmt: on
+        => return true,
+        else => return false,
+    }
+}
+
 // parseTypeof
 // parseVisibilityModifier
 // parseAsm
@@ -1677,13 +1826,13 @@ pub fn main() !void {
     parser = try Parser.new("self");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicTypeWithSuffix();
+    node = try parser.parseBareProcType();
     assert(node == .self);
 
     parser = try Parser.new("self?");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicTypeWithSuffix();
+    node = try parser.parseBareProcType();
     assert(node == .@"union");
     assert(node.@"union".types.items.len == 2);
     assert(node.@"union".types.items[0] == .self);
@@ -1695,14 +1844,14 @@ pub fn main() !void {
     parser = try Parser.new("_");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicTypeWithSuffix();
+    node = try parser.parseBareProcType();
     assert(node == .underscore);
 
     // makePointerType
     parser = try Parser.new("self*");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicTypeWithSuffix();
+    node = try parser.parseBareProcType();
     assert(node == .generic);
     assert(node.generic.name == .path);
     assert(node.generic.name.path.is_global);
@@ -1712,7 +1861,7 @@ pub fn main() !void {
     parser = try Parser.new("self**");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicTypeWithSuffix();
+    node = try parser.parseBareProcType();
     assert(node == .generic);
     assert(node.generic.name == .path);
     assert(node.generic.name.path.is_global);
@@ -1728,13 +1877,23 @@ pub fn main() !void {
     parser = try Parser.new("self[123]");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parseAtomicTypeWithSuffix();
+    node = try parser.parseBareProcType();
     assert(node == .generic);
     assert(node.generic.name == .path);
     assert(node.generic.name.path.is_global);
     assert(std.mem.eql(u8, "StaticArray", node.generic.name.path.names.items[0]));
     assert(node.generic.type_vars.items[0] == .self);
     assert(node.generic.type_vars.items[1] == .number_literal);
+
+    // parseUnionType
+    parser = try Parser.new("self | _");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseBareProcType();
+    assert(node == .@"union");
+    assert(node.@"union".types.items.len == 2);
+    assert(node.@"union".types.items[0] == .self);
+    assert(node.@"union".types.items[1] == .underscore);
 
     // p("{}\n", .{});
 

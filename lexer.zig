@@ -75,25 +75,25 @@ pub fn init(allocator: Allocator, string: []const u8) Lexer {
 pub fn nextToken(lexer: *Lexer) !Token {
     const token = try lexer._nextToken();
 
-    if (token.type == .newline and
-        !lexer.consuming_heredocs and
-        lexer.heredocs.items.len > 0)
-    {
-        try lexer.consumeHeredocs();
-    }
+    // if (token.type == .newline and
+    //     !lexer.consuming_heredocs and
+    //     lexer.heredocs.items.len > 0)
+    // {
+    //     try lexer.consumeHeredocs();
+    // }
 
     return token;
 }
 
-pub fn consumeHeredocs(lexer: *Lexer) !void {
-    lexer.consuming_heredocs = true;
-    std.mem.reverse(Heredoc, lexer.heredocs.items);
-    while (lexer.heredocs.items.len > 0) {
-        const heredoc = lexer.heredocs.pop();
-        try lexer.consumeHeredoc(heredoc);
-    }
-    lexer.consuming_heredocs = false;
-}
+// pub fn consumeHeredocs(lexer: *Lexer) !void {
+//     lexer.consuming_heredocs = true;
+//     std.mem.reverse(Heredoc, lexer.heredocs.items);
+//     while (lexer.heredocs.items.len > 0) {
+//         const heredoc = lexer.heredocs.pop();
+//         try lexer.consumeHeredoc(heredoc);
+//     }
+//     lexer.consuming_heredocs = false;
+// }
 
 const StringPiece = struct {
     value: union(enum) {
@@ -103,35 +103,35 @@ const StringPiece = struct {
     line_number: usize,
 };
 
-pub fn consumeHeredoc(lexer: *Lexer, heredoc: Heredoc) !void {
-    _ = lexer;
-    _ = heredoc;
-    return error.Unimplemented;
-    // const node = heredoc.node;
-    // var delimiter_state = heredoc.delimiter_state;
-    // // nextStringToken(delimiter_state);
-    // // delimiter_state = lexer.token.delimiter_state;
+// pub fn consumeHeredoc(lexer: *Lexer, heredoc: Heredoc) !void {
+//     _ = lexer;
+//     _ = heredoc;
+//     return error.Unimplemented;
+//     // const node = heredoc.node;
+//     // var delimiter_state = heredoc.delimiter_state;
+//     // // nextStringToken(delimiter_state);
+//     // // delimiter_state = lexer.token.delimiter_state;
+//
+//     // var pieces = ArrayList(StringPiece).init(lexer.allocator);
+//     // var has_interpolation = false;
+//
+//     // // consumeDelimiter(pieces, delimiter_state, has_interpolation);
+//
+//     // if (has_interpolation) {
+//     //     // combineInterpolationPieces(pieces, delimiter_state, &node.expressions);
+//     // } else {
+//     //     // const string = combinePieces(pieces, delimiter_state);
+//     //     // const exp = StringLiteral.new(lexer.allocator, string);
+//     //     // exp.setLocation(node.location);
+//     //     // exp.setEndLocation(token_end_location);
+//     //     // node.expressions.append(exp);
+//     // }
+//     // _ = pieces;
+//     // _ = node;
+//     // _ = delimiter_state;
+// }
 
-    // var pieces = ArrayList(StringPiece).init(lexer.allocator);
-    // var has_interpolation = false;
-
-    // // consumeDelimiter(pieces, delimiter_state, has_interpolation);
-
-    // if (has_interpolation) {
-    //     // combineInterpolationPieces(pieces, delimiter_state, &node.expressions);
-    // } else {
-    //     // const string = combinePieces(pieces, delimiter_state);
-    //     // const exp = StringLiteral.new(lexer.allocator, string);
-    //     // exp.setLocation(node.location);
-    //     // exp.setEndLocation(token_end_location);
-    //     // node.expressions.append(exp);
-    // }
-    // _ = pieces;
-    // _ = node;
-    // _ = delimiter_state;
-}
-
-pub fn _nextToken(lexer: *Lexer) !Token {
+fn _nextToken(lexer: *Lexer) !Token {
     // Check previous token:
     if (lexer.token.type == .newline or lexer.token.type == .eof) {
         // 1) After a newline or at the start of the stream (:EOF), a following
