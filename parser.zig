@@ -579,8 +579,37 @@ pub fn parsePow(parser: *Parser) !Node {
 }
 
 pub fn parsePrefix(parser: *Parser) !Node {
-    // TODO: implement
-    return parser.parseAtomicWithMethod();
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    // TODO: redundant variable?
+    const name_location = lexer.token.location();
+    switch (lexer.token.type) {
+        .op_bang, .op_plus, .op_minus, .op_tilde, .op_amp_plus, .op_amp_minus => |token_type| {
+            const location = lexer.token.location();
+            try lexer.skipTokenAndSpaceOrNewline();
+            try parser.checkVoidExpressionKeyword();
+            const obj = try parser.parsePrefix();
+            if (token_type == .op_bang) {
+                const node = try Not.node(allocator, obj);
+                node.setLocation(location);
+                node.copyEndLocation(obj);
+                return node;
+            } else {
+                const method = token_type.toString();
+                const args = ArrayList(Node).init(allocator);
+                const node = try Call.node(allocator, obj, method, args, .{
+                    .name_location = name_location,
+                });
+                node.setLocation(location);
+                node.copyEndLocation(obj);
+                return node;
+            }
+        },
+        else => {
+            return parser.parseAtomicWithMethod();
+        },
+    }
 }
 
 // AtomicWithMethodCheck
@@ -728,6 +757,38 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             return lexer.raiseFor("__END_LINE__ can only be used in default parameter value", lexer.token);
         },
         // TODO
+        .ident => {
+            switch (lexer.token.value) {
+                .keyword => |keyword| {
+                    switch (keyword) {
+                        // TODO
+                        .true => {
+                            if (try parser.checkTypeDeclaration()) |node| {
+                                return node;
+                            } else {
+                                const node = try BoolLiteral.node(allocator, true);
+                                try parser.skipNodeToken(node);
+                                return node;
+                            }
+                        },
+                        .false => {
+                            if (try parser.checkTypeDeclaration()) |node| {
+                                return node;
+                            } else {
+                                const node = try BoolLiteral.node(allocator, false);
+                                try parser.skipNodeToken(node);
+                                return node;
+                            }
+                        },
+                        // TODO
+                        else => {},
+                    }
+                },
+                else => {},
+            }
+            return parser.unexpectedTokenInAtomic(); // TODO
+        },
+        // TODO
         .underscore => {
             const node = try Underscore.node(allocator);
             try parser.skipNodeToken(node);
@@ -739,7 +800,12 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
     }
 }
 
-// checkTypeDeclaration
+pub fn checkTypeDeclaration(parser: *Parser) !?Node {
+    // TODO: implement
+    _ = parser;
+    return null;
+}
+
 // parseTypeDeclaration
 
 pub fn nextComesColonSpace(parser: *Parser) bool {
@@ -2167,10 +2233,14 @@ pub fn main() !void {
     assert(node == .array_literal);
 
     // parseOperator
-    parser = try Parser.new("'a' || 'b'");
+    parser = try Parser.new("true || false");
     lexer = &parser.lexer;
     node = try parser.parse();
     assert(node == .@"or");
+    assert(node.@"or".left == .bool_literal);
+    assert(node.@"or".left.bool_literal.value == true);
+    assert(node.@"or".right == .bool_literal);
+    assert(node.@"or".right.bool_literal.value == false);
 
     // parseAddOrSub
     parser = try Parser.new("12 + 34");
@@ -2189,7 +2259,18 @@ pub fn main() !void {
     node = try parser.parse();
     assert(node == .call);
 
+    // parsePrefix
+    parser = try Parser.new("!false");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .not);
+    assert(node.not.exp == .bool_literal);
+    assert(node.not.exp.bool_literal.value == false);
+
     // p("{}\n", .{});
+
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Success\n", .{});
 
     // parser = Parser.new("");
     // var node = try parser.parse();
