@@ -392,34 +392,33 @@ pub fn parseRange(parser: *Parser) !Node {
 
 inline fn parseOperator(
     parser: *Parser,
-    comptime name: []const u8,
-    comptime next_operator: []const u8,
-    comptime Operator: type,
-    comptime operators: []const Token.Kind,
-    comptime options: struct { right_associative: bool = false },
+    comptime options: struct {
+        node: type,
+        operators: []const Token.Kind,
+        next_operator: []const u8,
+        right_associative: ?[]const u8 = null,
+    },
 ) !Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
     const location = lexer.token.location();
 
-    const left_fn = @field(Parser, "parse" ++ next_operator);
-    var left = try @call(.{}, left_fn, .{parser});
+    const parseLeft = @field(Parser, options.next_operator);
+    const parseRight = @field(
+        Parser,
+        options.right_associative orelse options.next_operator,
+    );
 
-    const right_fn = if (options.right_associative)
-        @field(Parser, "parse" ++ name)
-    else
-        left_fn;
-
+    var left = try parseLeft(parser);
     next_exp: while (true) {
         if (lexer.token.type == .space) {
             try lexer.skipToken();
             continue;
         }
 
-        inline for (operators) |op| {
+        inline for (options.operators) |op| {
             if (lexer.token.type == op) {
-                // TODO: incorrect location for sub-expressions?
                 try parser.checkVoidValue(left, location);
 
                 const method = op.toString();
@@ -427,15 +426,15 @@ inline fn parseOperator(
 
                 lexer.slash_is_regex = true;
                 try lexer.skipTokenAndSpaceOrNewline();
-                const right = try @call(.{}, right_fn, .{parser});
-                if (Operator == Call) {
+                const right = try parseRight(parser);
+                if (options.node == Call) {
                     var args = ArrayList(Node).init(allocator);
                     try args.append(right);
                     left = try Call.node(allocator, left, method, args, .{
                         .name_location = name_location,
                     });
                 } else {
-                    left = try Operator.node(allocator, left, right);
+                    left = try options.node.node(allocator, left, right);
                 }
                 left.setLocation(location);
                 left.copyEndLocation(right);
@@ -448,31 +447,59 @@ inline fn parseOperator(
 }
 
 pub fn parseOr(parser: *Parser) !Node {
-    return parser.parseOperator("Or", "And", Or, &.{.op_bar_bar}, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parseAnd",
+        .node = Or,
+        .operators = &.{.op_bar_bar},
+    });
 }
 
 pub fn parseAnd(parser: *Parser) !Node {
-    return parser.parseOperator("And", "Equality", And, &.{.op_amp_amp}, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parseEquality",
+        .node = And,
+        .operators = &.{.op_amp_amp},
+    });
 }
 
 pub fn parseEquality(parser: *Parser) !Node {
-    return parser.parseOperator("Equality", "Cmp", Call, &.{ .op_lt, .op_lt_eq, .op_gt, .op_gt_eq, .op_lt_eq_gt }, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parseCmp",
+        .node = Call,
+        .operators = &.{ .op_lt, .op_lt_eq, .op_gt, .op_gt_eq, .op_lt_eq_gt },
+    });
 }
 
 pub fn parseCmp(parser: *Parser) !Node {
-    return parser.parseOperator("Cmp", "LogicalOr", Call, &.{ .op_eq_eq, .op_bang_eq, .op_eq_tilde, .op_bang_tilde, .op_eq_eq_eq }, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parseLogicalOr",
+        .node = Call,
+        .operators = &.{ .op_eq_eq, .op_bang_eq, .op_eq_tilde, .op_bang_tilde, .op_eq_eq_eq },
+    });
 }
 
 pub fn parseLogicalOr(parser: *Parser) !Node {
-    return parser.parseOperator("LogicalOr", "LogicalAnd", Call, &.{ .op_bar, .op_caret }, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parseLogicalAnd",
+        .node = Call,
+        .operators = &.{ .op_bar, .op_caret },
+    });
 }
 
 pub fn parseLogicalAnd(parser: *Parser) !Node {
-    return parser.parseOperator("LogicalAnd", "Shift", Call, &.{.op_amp}, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parseShift",
+        .node = Call,
+        .operators = &.{.op_amp},
+    });
 }
 
 pub fn parseShift(parser: *Parser) !Node {
-    return parser.parseOperator("Shift", "AddOrSub", Call, &.{ .op_lt_lt, .op_gt_gt }, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parseAddOrSub",
+        .node = Call,
+        .operators = &.{ .op_lt_lt, .op_gt_gt },
+    });
 }
 
 pub fn parseAddOrSub(parser: *Parser) !Node {
@@ -481,11 +508,20 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
 }
 
 pub fn parseMulOrDiv(parser: *Parser) !Node {
-    return parser.parseOperator("MulOrDiv", "Pow", Call, &.{ .op_star, .op_slash, .op_slash_slash, .op_percent, .op_amp_star }, .{});
+    return parser.parseOperator(.{
+        .next_operator = "parsePow",
+        .node = Call,
+        .operators = &.{ .op_star, .op_slash, .op_slash_slash, .op_percent, .op_amp_star },
+    });
 }
 
 pub fn parsePow(parser: *Parser) !Node {
-    return parser.parseOperator("Pow", "Prefix", Call, &.{ .op_star_star, .op_amp_star_star }, .{ .right_associative = true });
+    return parser.parseOperator(.{
+        .next_operator = "parsePrefix",
+        .node = Call,
+        .operators = &.{ .op_star_star, .op_amp_star_star },
+        .right_associative = "parsePow",
+    });
 }
 
 pub fn parsePrefix(parser: *Parser) !Node {
