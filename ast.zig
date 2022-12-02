@@ -1412,6 +1412,30 @@ pub const TypeDeclaration = struct {
     @"var": Node,
     declared_type: Node,
     value: ?Node = null,
+
+    pub fn allocate(
+        allocator: Allocator,
+        @"var": Node,
+        declared_type: Node,
+        value: ?Node,
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .@"var" = @"var",
+            .declared_type = declared_type,
+            .value = value,
+        };
+        return instance;
+    }
+
+    pub fn node(
+        allocator: Allocator,
+        @"var": Node,
+        declared_type: Node,
+        value: ?Node,
+    ) !Node {
+        return Node{ .type_declaration = try allocate(allocator, @"var", declared_type, value) };
+    }
 };
 
 pub const UninitializedVar = struct {

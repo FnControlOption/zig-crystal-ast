@@ -366,15 +366,26 @@ pub fn parseMultiAssign(parser: *Parser) !Node {
 
 pub fn parseExpression(parser: *Parser) !Node {
     // TODO: implement
-    return parser.parseOpAssign();
+    return parser.parseOpAssign(.{});
 }
 
 // parseExpressionSuffix
 // parseExpressionSuffix
-// parseOpAssignNoControl
 
-pub fn parseOpAssign(parser: *Parser) !Node {
+pub fn parseOpAssignNoControl(parser: *Parser, options: anytype) !Node {
+    try parser.checkVoidExpressionKeyword();
+    return parser.parseOpAssign(options);
+}
+
+pub fn parseOpAssign(
+    parser: *Parser,
+    options: struct {
+        allow_ops: bool = true,
+        allow_suffix: bool = true,
+    },
+) !Node {
     // TODO: implement
+    _ = options;
     return parser.parseQuestionColon();
 }
 
@@ -763,22 +774,18 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                     switch (keyword) {
                         // TODO
                         .true => {
-                            if (try parser.checkTypeDeclaration()) |node| {
-                                return node;
-                            } else {
+                            return try parser.checkTypeDeclaration() orelse {
                                 const node = try BoolLiteral.node(allocator, true);
                                 try parser.skipNodeToken(node);
                                 return node;
-                            }
+                            };
                         },
                         .false => {
-                            if (try parser.checkTypeDeclaration()) |node| {
-                                return node;
-                            } else {
+                            return try parser.checkTypeDeclaration() orelse {
                                 const node = try BoolLiteral.node(allocator, false);
                                 try parser.skipNodeToken(node);
                                 return node;
-                            }
+                            };
                         },
                         // TODO
                         else => {},
@@ -801,17 +808,44 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
 }
 
 pub fn checkTypeDeclaration(parser: *Parser) !?Node {
-    // TODO: implement
-    _ = parser;
-    return null;
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    if (parser.nextComesColonSpace()) {
+        const name = identToString(lexer.token);
+        const v = try Var.node(allocator, name);
+        v.setLocation(lexer.token.location());
+        try lexer.skipTokenAndSpace();
+        try parser.check(.op_colon);
+        const node = try parser.parseTypeDeclaration(v);
+        parser.setVisibility(node);
+        return node;
+    } else {
+        return null;
+    }
 }
 
-// parseTypeDeclaration
+pub fn parseTypeDeclaration(parser: *Parser, v: Node) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    try lexer.skipTokenAndSpaceOrNewline();
+    const var_type = try parser.parseBareProcType();
+    try lexer.skipSpace();
+    var value: ?Node = null;
+    if (lexer.token.type == .op_eq) {
+        try lexer.skipTokenAndSpaceOrNewline();
+        value = try parser.parseOpAssignNoControl(.{});
+    }
+    const node = try TypeDeclaration.node(allocator, v, var_type, value);
+    node.copyLocation(v);
+    return node;
+}
 
 pub fn nextComesColonSpace(parser: *Parser) bool {
-    if (parser.no_type_declaration == 0) return false;
-
     const lexer = &parser.lexer;
+
+    if (parser.no_type_declaration == 0) return false;
 
     const pos = lexer.current_pos;
     defer lexer.current_pos = pos;
@@ -992,7 +1026,13 @@ pub fn atNamedTupleStart(parser: *const Parser) bool {
 // parseIfAfterCondition
 // parseUnless
 // parseUnlessAfterCondition
-// setVisibility
+
+pub fn setVisibility(parser: *const Parser, node: Node) void {
+    // TODO: implement
+    _ = parser;
+    _ = node;
+}
+
 // parseVarOrCall
 // nextComesPlusOrMinus
 
@@ -1847,11 +1887,13 @@ pub fn tempArgName(parser: *Parser) ![]const u8 {
 }
 
 // zig fmt: off
-pub fn main() !void {
+const Main = struct {
+var parser: Parser = undefined;
+fn _main() !void {
     const p = @import("std").debug.print;
     const assert = @import("std").debug.assert;
     p("", .{});
-    var parser = try Parser.new("foo");
+    parser = try Parser.new("foo");
     var lexer = &parser.lexer;
     assert(@TypeOf(parser) == Parser);
 
@@ -2267,6 +2309,13 @@ pub fn main() !void {
     assert(node.not.exp == .bool_literal);
     assert(node.not.exp.bool_literal.value == false);
 
+    // checkTypeDeclaration
+    parser = try Parser.new("false : self");
+    parser.no_type_declaration = 1;
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .type_declaration);
+
     // p("{}\n", .{});
 
     const stdout = std.io.getStdOut().writer();
@@ -2285,4 +2334,19 @@ pub fn main() !void {
     // try parser.parse();
     // p("{}\n", .{parser.lexer.token.type});
     // assert(parser.lexer.token.type == .ident);
+}
+};
+pub fn main() !void {
+    Main._main() catch |err| {
+        switch (err) {
+            error.SyntaxError => {
+                std.debug.print("Error: {s}\n", .{Main.parser.lexer.error_message.?});
+                std.debug.print("Press Enter to see stack trace...", .{});
+                const stdin = std.io.getStdIn().reader();
+                try stdin.skipUntilDelimiterOrEof('\n');
+                return err;
+            },
+            else => return err,
+        }
+    };
 }
