@@ -503,8 +503,62 @@ pub fn parseShift(parser: *Parser) !Node {
 }
 
 pub fn parseAddOrSub(parser: *Parser) !Node {
-    // TODO: implement
-    return parser.parseMulOrDiv();
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+
+    var left = try parser.parseMulOrDiv();
+    while (true) {
+        switch (lexer.token.type) {
+            .space => {
+                try lexer.skipToken();
+            },
+            .op_plus, .op_minus, .op_amp_plus, .op_amp_minus => |op| {
+                try parser.checkVoidValue(left, location);
+
+                const method = op.toString();
+                const name_location = lexer.token.location();
+                // TODO: slash is never regex?
+                try lexer.skipTokenAndSpaceOrNewline();
+                const right = try parser.parseMulOrDiv();
+                var args = ArrayList(Node).init(allocator);
+                try args.append(right);
+                left = try Call.node(allocator, left, method, args, .{
+                    .name_location = name_location,
+                });
+                left.setLocation(location);
+                left.copyEndLocation(right);
+            },
+            .number => {
+                switch (lexer.token.value.string[0]) {
+                    '+', '-' => {
+                        const method = lexer.token.value.string[0..1];
+                        const name_location = lexer.token.location();
+
+                        // Go back to the +/-, advance one char and continue from there
+                        lexer.current_pos = lexer.token.start + 1;
+                        try lexer.skipToken();
+
+                        const right = try parser.parseMulOrDiv();
+                        var args = ArrayList(Node).init(allocator);
+                        try args.append(right);
+                        left = try Call.node(allocator, left, method, args, .{
+                            .name_location = name_location,
+                        });
+                        left.setLocation(location);
+                        left.copyEndLocation(right);
+                    },
+                    else => {
+                        return left;
+                    },
+                }
+            },
+            else => {
+                return left;
+            },
+        }
+    }
 }
 
 pub fn parseMulOrDiv(parser: *Parser) !Node {
@@ -575,6 +629,14 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             return parser.parseEmptyArrayLiteral();
         },
         // TODO
+        .number => {
+            lexer.wants_regex = false;
+            const value = lexer.token.value.string;
+            const kind = lexer.token.number_kind;
+            const node = try NumberLiteral.node(allocator, value, kind);
+            try parser.skipNodeToken(node);
+            return node;
+        },
         .char => {
             const value = lexer.token.value.char;
             const node = try CharLiteral.node(allocator, value);
@@ -2109,6 +2171,23 @@ pub fn main() !void {
     lexer = &parser.lexer;
     node = try parser.parse();
     assert(node == .@"or");
+
+    // parseAddOrSub
+    parser = try Parser.new("12 + 34");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .call);
+    assert(node.call.obj.? == .number_literal);
+    assert(std.mem.eql(u8, node.call.obj.?.number_literal.value, "12"));
+    assert(std.mem.eql(u8, node.call.name, "+"));
+    assert(node.call.args.items.len == 1);
+    assert(node.call.args.items[0] == .number_literal);
+    assert(std.mem.eql(u8, node.call.args.items[0].number_literal.value, "34"));
+
+    parser = try Parser.new("12-34");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .call);
 
     // p("{}\n", .{});
 
