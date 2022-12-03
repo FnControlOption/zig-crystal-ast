@@ -95,13 +95,13 @@ pub fn nextToken(lexer: *Lexer) !Token {
 //     lexer.consuming_heredocs = false;
 // }
 
-const StringPiece = struct {
-    value: union(enum) {
-        string: []const u8,
-        node: ast.Node,
-    },
-    line_number: usize,
-};
+// const StringPiece = struct {
+//     value: union(enum) {
+//         string: []const u8,
+//         node: ast.Node,
+//     },
+//     line_number: usize,
+// };
 
 // pub fn consumeHeredoc(lexer: *Lexer, heredoc: Heredoc) !void {
 //     _ = lexer;
@@ -1475,14 +1475,14 @@ fn scanNumber(lexer: *Lexer, start: usize, negative: bool) !void {
 }
 
 // fn consumeNumberSuffix
-// nextStringToken
-// fn nextStringTokenNoescape
+pub const nextStringToken = StringLexer.nextStringToken;
+const nextStringTokenNoEscape = StringLexer.nextStringTokenNoEscape;
 // fn checkHeredocEnd
 
 fn raiseUnterminatedQuoted(
     lexer: *Lexer,
     delimiter_state: Token.DelimiterState,
-) !void {
+) (error{SyntaxError} || std.fmt.AllocPrintError) {
     return lexer.raise(switch (delimiter_state.delimiters) {
         .command => "Unterminated command literal",
         .regex => "Unterminated regular expression",
@@ -2750,6 +2750,96 @@ const MacroLexer = struct {
 };
 
 const StringLexer = struct {
+    fn nextStringToken(
+        lexer: *Lexer,
+        delimiter_state: Token.DelimiterState,
+    ) !Token {
+        lexer.resetToken();
+
+        lexer.token.line_number = lexer.line_number;
+        lexer.token.delimiter_state = delimiter_state;
+
+        const start = lexer.current_pos;
+        const string_end = delimiter_state.delimiters.end();
+        const string_nest = delimiter_state.delimiters.nest();
+
+        if (lexer.token.type == .newline and
+            delimiter_state.delimiters == .heredoc)
+        {
+            // TODO: implement
+            return lexer.unknownToken();
+        }
+
+        switch (lexer.currentChar()) {
+            0 => {
+                return lexer.raiseUnterminatedQuoted(delimiter_state);
+            },
+            '\\' => {
+                // TODO: implement
+                return lexer.unknownToken();
+            },
+            '#' => {
+                // TODO: implement
+                return lexer.unknownToken();
+            },
+            '\r', '\n' => {
+                // TODO: implement
+                return lexer.unknownToken();
+            },
+            else => |c| {
+                if (c == string_end) {
+                    lexer.skipChar();
+                    if (delimiter_state.open_count == 0) {
+                        lexer.token.type = .delimiter_end;
+                    } else {
+                        lexer.token.type = .string;
+                        lexer.token.value = .{ .string = lexer.stringRange(start) };
+                        lexer.token.delimiter_state = delimiter_state;
+                        lexer.token.delimiter_state.open_count -= 1;
+                    }
+                } else if (c == string_nest) {
+                    lexer.skipChar();
+                    lexer.token.type = .string;
+                    lexer.token.value = .{ .string = lexer.stringRange(start) };
+                    lexer.token.delimiter_state = delimiter_state;
+                    lexer.token.delimiter_state.open_count += 1;
+                } else {
+                    lexer.nextStringTokenNoEscape(delimiter_state);
+                    lexer.token.value = .{ .string = lexer.stringRange(start) };
+                }
+            },
+        }
+
+        lexer.setTokenRawFromStart(start);
+
+        return lexer.token;
+    }
+
+    fn nextStringTokenNoEscape(
+        lexer: *Lexer,
+        delimiter_state: Token.DelimiterState,
+    ) void {
+        const string_end = delimiter_state.delimiters.end();
+        const string_nest = delimiter_state.delimiters.nest();
+
+        while (true) {
+            switch (lexer.currentChar()) {
+                0, '\\', '#', '\r', '\n' => {
+                    break;
+                },
+                else => |c| {
+                    if (c == string_end or c == string_nest) {
+                        break;
+                    } else {
+                        lexer.skipChar();
+                    }
+                }
+            }
+        }
+
+        lexer.token.type = .string;
+    }
+
     fn nextStringArrayToken(lexer: *Lexer) !Token {
         lexer.resetToken();
 
@@ -3538,13 +3628,13 @@ pub fn main() !void {
 
     // raiseUnterminatedQuoted
     lexer = Lexer.new("foo");
-    if (lexer.raiseUnterminatedQuoted(.{ .delimiters = .{ .heredoc = "bar" } })) |_| unreachable else |err| {
-        assert(err == error.SyntaxError);
-        assert(std.mem.eql(u8, lexer.error_message.?, blk: {
-            break :blk "Unterminated heredoc: can't find " ++
-                "\"bar\" anywhere before the end of file";
-        }));
-    }
+    assert(error.SyntaxError == lexer.raiseUnterminatedQuoted(.{
+        .delimiters = .{ .heredoc = "bar" },
+    }));
+    assert(std.mem.eql(u8, lexer.error_message.?, blk: {
+        break :blk "Unterminated heredoc: can't find " ++
+            "\"bar\" anywhere before the end of file";
+    }));
 
     const delimiter_kinds = [_]Token.DelimiterKind{
         .command,
@@ -3559,9 +3649,9 @@ pub fn main() !void {
     assert(delimiter_kinds.len == messages.len);
     inline for (delimiter_kinds) |kind, i| {
         lexer = Lexer.new("foo");
-        if (lexer.raiseUnterminatedQuoted(.{ .delimiters = Token.Delimiters.of(kind, '`', '"') })) |_| unreachable else |err| {
-            assert(err == error.SyntaxError);
-            assert(std.mem.eql(u8, messages[i], lexer.error_message.?));
-        }
+        assert(error.SyntaxError == lexer.raiseUnterminatedQuoted(.{
+            .delimiters = Token.Delimiters.of(kind, '`', '"'),
+        }));
+        assert(std.mem.eql(u8, messages[i], lexer.error_message.?));
     }
 }

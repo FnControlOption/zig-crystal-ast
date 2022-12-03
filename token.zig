@@ -402,13 +402,27 @@ pub const Delimiters = union(DelimiterKind) {
 
     pub fn of(
         comptime kind: DelimiterKind,
-        nest: u8,
-        end: u8,
+        nest_: u8,
+        end_: u8,
     ) Delimiters {
         return @unionInit(Delimiters, @tagName(kind), Pair{
-            .nest = nest,
-            .end = end,
+            .nest = nest_,
+            .end = end_,
         });
+    }
+
+    pub fn nest(delimiters: Delimiters) ?u8 {
+        return switch (delimiters) {
+            .heredoc => null,
+            inline else => |pair| pair.nest,
+        };
+    }
+
+    pub fn end(delimiters: Delimiters) ?u8 {
+        return switch (delimiters) {
+            .heredoc => null,
+            inline else => |pair| pair.end,
+        };
     }
 };
 

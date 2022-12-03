@@ -441,9 +441,13 @@ inline fn parseOperator(
                 if (options.node == Call) {
                     var args = ArrayList(Node).init(allocator);
                     try args.append(right);
-                    left = try Call.node(allocator, left, method, args, .{
-                        .name_location = name_location,
-                    });
+                    left = try Call.node(
+                        allocator,
+                        left,
+                        method,
+                        args,
+                        .{ .name_location = name_location },
+                    );
                 } else {
                     left = try options.node.node(allocator, left, right);
                 }
@@ -535,9 +539,13 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
                 const right = try parser.parseMulOrDiv();
                 var args = ArrayList(Node).init(allocator);
                 try args.append(right);
-                left = try Call.node(allocator, left, method, args, .{
-                    .name_location = name_location,
-                });
+                left = try Call.node(
+                    allocator,
+                    left,
+                    method,
+                    args,
+                    .{ .name_location = name_location },
+                );
                 left.setLocation(location);
                 left.copyEndLocation(right);
             },
@@ -554,9 +562,13 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
                         const right = try parser.parseMulOrDiv();
                         var args = ArrayList(Node).init(allocator);
                         try args.append(right);
-                        left = try Call.node(allocator, left, method, args, .{
-                            .name_location = name_location,
-                        });
+                        left = try Call.node(
+                            allocator,
+                            left,
+                            method,
+                            args,
+                            .{ .name_location = name_location },
+                        );
                         left.setLocation(location);
                         left.copyEndLocation(right);
                     },
@@ -607,11 +619,13 @@ pub fn parsePrefix(parser: *Parser) !Node {
                 node.copyEndLocation(obj);
                 return node;
             } else {
-                const method = token_type.toString();
-                const args = ArrayList(Node).init(allocator);
-                const node = try Call.node(allocator, obj, method, args, .{
-                    .name_location = name_location,
-                });
+                const node = try Call.node(
+                    allocator,
+                    obj,
+                    token_type.toString(),
+                    ArrayList(Node).init(allocator),
+                    .{ .name_location = name_location },
+                );
                 node.setLocation(location);
                 node.copyEndLocation(obj);
                 return node;
@@ -683,7 +697,13 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             try parser.skipNodeToken(node);
             return node;
         },
-        // TODO
+        .string => {
+            // TODO: is it ever possible to have .string here?
+            unreachable;
+        },
+        .delimiter_start => {
+            return parser.parseDelimiter(.{});
+        },
         .string_array_start => {
             return parser.parseStringArray();
         },
@@ -890,14 +910,227 @@ pub fn nextComesColonSpace(parser: *Parser) bool {
 // checkNotPipeBeforeProcLiteralBody
 // parseFunLiteralParam
 // parseFunPointer
-// parseDelimiter
+
+pub const Piece = struct {
+    value: union(enum) {
+        string: []const u8,
+        node: Node,
+    },
+    line_number: usize,
+
+    pub fn string(value: []const u8, line_number: usize) Piece {
+        return .{
+            .value = .{ .string = value },
+            .line_number = line_number,
+        };
+    }
+
+    pub fn node(value: Node, line_number: usize) Piece {
+        return .{
+            .value = .{ .node = value },
+            .line_number = line_number,
+        };
+    }
+};
+
+pub fn parseDelimiter(
+    parser: *Parser,
+    options: struct { want_skip_space: bool = true },
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    if (lexer.token.type == .string) {
+        // TODO: is it ever possible to have .string here?
+        unreachable;
+    }
+
+    const location = lexer.token.location();
+    var delimiter_state = lexer.token.delimiter_state;
+
+    try parser.check(.delimiter_start);
+
+    if (delimiter_state.delimiters == .heredoc) {
+        // TODO: implement
+        return parser.unexpectedToken();
+    }
+
+    _ = try lexer.nextStringToken(delimiter_state);
+    delimiter_state = lexer.token.delimiter_state;
+
+    var pieces = ArrayList(Piece).init(allocator);
+    var has_interpolation = false;
+
+    var token_end_location: Location = undefined;
+    try parser.consumeDelimiter(
+        &pieces,
+        &delimiter_state,
+        &has_interpolation,
+        &token_end_location,
+    );
+
+    if (options.want_skip_space and delimiter_state.delimiters == .string) {
+        while (true) {
+            const passed_backslash_newline = lexer.token.passed_backslash_newline;
+            try lexer.skipSpace();
+
+            if (passed_backslash_newline and
+                lexer.token.type == .delimiter_start and
+                lexer.token.delimiter_state.delimiters == .string)
+            {
+                _ = try lexer.nextStringToken(delimiter_state);
+                delimiter_state = lexer.token.delimiter_state;
+                try parser.consumeDelimiter(
+                    &pieces,
+                    &delimiter_state,
+                    &has_interpolation,
+                    &token_end_location,
+                );
+            } else {
+                break;
+            }
+        }
+    }
+
+    var result: Node = undefined;
+    if (has_interpolation) {
+        // TODO: implement
+        return parser.unexpectedToken();
+    } else {
+        const string = try parser.combinePieces(pieces, delimiter_state);
+        result = try StringLiteral.node(allocator, string);
+    }
+
+    switch (delimiter_state.delimiters) {
+        .command => {
+            var args = ArrayList(Node).init(allocator);
+            try args.append(result);
+            result = try Call.node(allocator, null, "`", args, .{});
+            result.setLocation(location);
+        },
+        .regex => {
+            // TODO: implement
+            return parser.unexpectedToken();
+        },
+        else => {
+            // no special treatment
+        },
+    }
+
+    result.setEndLocation(token_end_location);
+
+    return result;
+}
+
 // fn combineInterpolationPieces
-// fn combinePieces
-// consumeDelimiter
+
+fn combinePieces(
+    parser: *Parser,
+    pieces: ArrayList(Piece),
+    delimiter_state: Token.DelimiterState,
+) ![]const u8 {
+    const allocator = parser.lexer.allocator;
+    if (needsHeredocIndentRemoved(delimiter_state)) {
+        // TODO: implement
+        return parser.unexpectedToken();
+    } else {
+        var buffer = ArrayList(u8).init(allocator);
+        for (pieces.items) |piece| {
+            try buffer.appendSlice(piece.value.string);
+        }
+        return buffer.items;
+    }
+}
+
+pub fn consumeDelimiter(
+    parser: *Parser,
+    pieces: *ArrayList(Piece),
+    delimiter_state: *Token.DelimiterState,
+    has_interpolation: *bool,
+    token_end_location: *Location,
+) !void {
+    const lexer = &parser.lexer;
+
+    while (true) {
+        switch (lexer.token.type) {
+            .string => {
+                try pieces.append(Piece.string(
+                    lexer.token.value.string,
+                    lexer.token.line_number,
+                ));
+
+                _ = try lexer.nextStringToken(delimiter_state.*);
+                delimiter_state.* = lexer.token.delimiter_state;
+            },
+            .delimiter_end => {
+                if (delimiter_state.delimiters == .regex) {
+                    // TODO: implement
+                    return parser.unexpectedToken();
+                }
+                token_end_location.* = lexer.tokenEndLocation();
+                try lexer.skipToken();
+                break;
+            },
+            .eof => {
+                switch (delimiter_state.delimiters) {
+                    .command => {
+                        return lexer.raise("Unterminated command");
+                    },
+                    .regex => {
+                        return lexer.raise("Unterminated regular expression");
+                    },
+                    .heredoc => {
+                        return lexer.raise("Unterminated heredoc");
+                    },
+                    else => {
+                        return lexer.raise("Unterminated string literal");
+                    },
+                }
+            },
+            else => {
+                const line_number = lexer.token.line_number;
+                delimiter_state.* = lexer.token.delimiter_state;
+                try lexer.skipTokenAndSpaceOrNewline();
+                const old_inside_interpolation = parser.inside_interpolation;
+                defer parser.inside_interpolation = old_inside_interpolation;
+                parser.inside_interpolation = true;
+                const exp = blk: {
+                    const old_stop_on_do = parser.replaceStopOnDo(false);
+                    defer _ = parser.replaceStopOnDo(old_stop_on_do);
+                    break :blk try parser.parseExpression();
+                };
+
+                // We cannot reduce `StringLiteral` of interpolation inside heredoc into `String`
+                // because heredoc try to remove its indentation.
+                if (exp == .string_literal and delimiter_state.delimiters != .heredoc) {
+                    try pieces.append(Piece.string(exp.string_literal.value, line_number));
+                } else {
+                    try pieces.append(Piece.node(exp, line_number));
+                    has_interpolation.* = true;
+                }
+
+                try lexer.skipSpaceOrNewline();
+                if (lexer.token.type != .op_rcurly) {
+                    return lexer.raise("Unterminated string interpolation");
+                }
+
+                lexer.token.delimiter_state = delimiter_state.*;
+                _ = try lexer.nextStringToken(delimiter_state.*);
+                delimiter_state.* = lexer.token.delimiter_state;
+            },
+        }
+    }
+}
+
 // consumeRegexOptions
 // consumeHeredocs
 // consumeHeredoc
-// needsHeredocIndentRemoved
+
+pub fn needsHeredocIndentRemoved(delimiter_state: Token.DelimiterState) bool {
+    return delimiter_state.delimiters == .heredoc and
+        delimiter_state.heredoc_indent >= 0;
+}
+
 // removeHeredocIndent
 // fn addHeredocPiece
 // fn addHeredocPiece
@@ -2315,6 +2548,19 @@ fn _main() !void {
     lexer = &parser.lexer;
     node = try parser.parse();
     assert(node == .type_declaration);
+
+    // parseDelimiter
+    parser = try Parser.new("\"foo\"");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .string_literal);
+    assert(std.mem.eql(u8, node.string_literal.value, "foo"));
+
+    parser = try Parser.new("%q(\"foo\" bar)");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .string_literal);
+    assert(std.mem.eql(u8, node.string_literal.value, "\"foo\" bar"));
 
     // p("{}\n", .{});
 
