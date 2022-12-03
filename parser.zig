@@ -871,10 +871,10 @@ pub fn nextComesColonSpace(parser: *Parser) bool {
     defer lexer.current_pos = pos;
 
     while (std.ascii.isWhitespace(lexer.currentChar())) {
-        lexer.skipCharNoColumnIncrement();
+        lexer.skipChar(.{ .column_increment = false });
     }
     if (lexer.currentChar() == ':') {
-        lexer.skipCharNoColumnIncrement();
+        lexer.skipChar(.{ .column_increment = false });
         return std.ascii.isWhitespace(lexer.currentChar());
     }
     return false;
@@ -1206,7 +1206,7 @@ pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
 // parseHashOrTupleLiteral
 // parseHashLiteral
 
-pub fn atNamedTupleStart(parser: *const Parser) bool {
+pub fn nextComesNamedTupleStart(parser: *const Parser) bool {
     const lexer = &parser.lexer;
     return switch (lexer.token.type) {
         .ident, .@"const" => lexer.currentChar() == ':' and lexer.peekNextChar() != ':',
@@ -1295,7 +1295,7 @@ pub fn parseBareProcType(parser: *Parser) !Node {
     if (blk: {
         const has_another_type =
             lexer.token.type == .op_comma and
-            try parser.atTypeStart(.{ .consume_newlines = true });
+            try parser.nextComesTypeStart(.{ .consume_newlines = true });
         break :blk lexer.token.type != .op_minus_gt and
             !has_another_type;
     }) {
@@ -1314,7 +1314,7 @@ pub fn parseBareProcType(parser: *Parser) !Node {
             try input_types.append(try parser.parseTypeSplatUnionType());
             const has_another_type =
                 lexer.token.type == .op_comma and
-                try parser.atTypeStart(.{ .consume_newlines = true });
+                try parser.nextComesTypeStart(.{ .consume_newlines = true });
             if (!has_another_type) break;
         }
     }
@@ -1543,7 +1543,7 @@ pub fn parseProcTypeOutput(
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
-    const has_output_type = try parser.atTypeStart(.{ .consume_newlines = false });
+    const has_output_type = try parser.nextComesTypeStart(.{ .consume_newlines = false });
 
     try parser.check(.op_minus_gt);
     try lexer.skipTokenAndSpace();
@@ -1615,7 +1615,7 @@ pub fn makeStaticArrayType(parser: *const Parser, t: Node, size: Node) !Node {
 // makeTupleType
 // makeNamedTupleType
 
-pub fn atTypeStart(
+pub fn nextComesTypeStart(
     parser: *Parser,
     options: struct { consume_newlines: bool },
 ) !bool {
@@ -1645,7 +1645,7 @@ fn findTypeStart(parser: *Parser) !bool {
 
     switch (lexer.token.type) {
         .ident => {
-            if (parser.atNamedTupleStart()) {
+            if (parser.nextComesNamedTupleStart()) {
                 return false;
             }
             if (lexer.token.value.isKeyword(.typeof)) {
@@ -1660,7 +1660,7 @@ fn findTypeStart(parser: *Parser) !bool {
             return false;
         },
         .@"const" => {
-            if (parser.atNamedTupleStart()) {
+            if (parser.nextComesNamedTupleStart()) {
                 return false;
             }
             return parser.findTypePathStart();
