@@ -952,7 +952,7 @@ pub fn parseDelimiter(
 
     if (delimiter_state.delimiters == .heredoc) {
         // TODO: implement
-        return parser.unexpectedToken();
+        return parser.unexpectedTokenMsg("unimplemented");
     }
 
     _ = try lexer.nextStringToken(delimiter_state);
@@ -995,7 +995,7 @@ pub fn parseDelimiter(
     var result: Node = undefined;
     if (has_interpolation) {
         // TODO: implement
-        return parser.unexpectedToken();
+        return parser.unexpectedTokenMsg("unimplemented");
     } else {
         const string = try parser.combinePieces(pieces, delimiter_state);
         result = try StringLiteral.node(allocator, string);
@@ -1010,7 +1010,7 @@ pub fn parseDelimiter(
         },
         .regex => {
             // TODO: implement
-            return parser.unexpectedToken();
+            return parser.unexpectedTokenMsg("unimplemented");
         },
         else => {
             // no special treatment
@@ -1032,7 +1032,7 @@ fn combinePieces(
     const allocator = parser.lexer.allocator;
     if (needsHeredocIndentRemoved(delimiter_state)) {
         // TODO: implement
-        return parser.unexpectedToken();
+        return parser.unexpectedTokenMsg("unimplemented");
     } else {
         var buffer = ArrayList(u8).init(allocator);
         for (pieces.items) |piece| {
@@ -1065,7 +1065,7 @@ pub fn consumeDelimiter(
             .delimiter_end => {
                 if (delimiter_state.delimiters == .regex) {
                     // TODO: implement
-                    return parser.unexpectedToken();
+                    return parser.unexpectedTokenMsg("unimplemented");
                 }
                 token_end_location.* = lexer.tokenEndLocation();
                 try lexer.skipToken();

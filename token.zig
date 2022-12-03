@@ -307,8 +307,8 @@ pub const Kind = enum {
             .op_percent_eq, .op_bar_eq, .op_amp_eq, .op_caret_eq, .op_star_star_eq,
             .op_lt_lt_eq, .op_gt_gt_eq, .op_bar_bar_eq, .op_amp_amp_eq, .op_amp_plus_eq,
             .op_amp_minus_eq, .op_amp_star_eq
-            => true,
             // zig fmt: on
+            => true,
             else => false,
         };
     }
@@ -405,10 +405,11 @@ pub const Delimiters = union(DelimiterKind) {
         nest_: u8,
         end_: u8,
     ) Delimiters {
-        return @unionInit(Delimiters, @tagName(kind), Pair{
-            .nest = nest_,
-            .end = end_,
-        });
+        return @unionInit(
+            Delimiters,
+            @tagName(kind),
+            Pair{ .nest = nest_, .end = end_ },
+        );
     }
 
     pub fn nest(delimiters: Delimiters) ?u8 {
@@ -450,14 +451,14 @@ pub const DelimiterState = struct {
     //     };
     // }
 
-    pub fn withHeredocIndent(state: DelimiterState, indent: i32) DelimiterState {
-        return .{
-            .delimiters = state.delimiters,
-            .open_count = state.open_count,
-            .heredoc_indent = indent,
-            .allow_escapes = state.allow_escapes,
-        };
-    }
+    // pub fn withHeredocIndent(state: DelimiterState, indent: i32) DelimiterState {
+    //     return .{
+    //         .delimiters = state.delimiters,
+    //         .open_count = state.open_count,
+    //         .heredoc_indent = indent,
+    //         .allow_escapes = state.allow_escapes,
+    //     };
+    // }
 };
 
 pub fn location(token: *Token) Location {
@@ -518,7 +519,7 @@ pub fn main() void {
     p("{}\n", .{DelimiterState{}});
     p("{}\n", .{Delimiters.of(.regex, '{', '}')});
     // p("{}\n", .{(DelimiterState{}).withOpenCountDelta(3)});
-    p("{}\n", .{(DelimiterState{}).withHeredocIndent(5)});
+    // p("{}\n", .{(DelimiterState{}).withHeredocIndent(5)});
     p("{}\n", .{Token{}});
     var token = Token{};
     token.type = .ident;

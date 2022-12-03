@@ -1486,10 +1486,10 @@ fn raiseUnterminatedQuoted(
     return lexer.raise(switch (delimiter_state.delimiters) {
         .command => "Unterminated command literal",
         .regex => "Unterminated regular expression",
-        .heredoc => |delimiter| try std.fmt.allocPrint(
+        .heredoc => |identifier| try std.fmt.allocPrint(
             lexer.allocator,
             "Unterminated heredoc: can't find \"{s}\" anywhere before the end of file",
-            .{delimiter},
+            .{identifier},
         ),
         .string => "Unterminated string literal",
         .string_array, .symbol_array => unreachable,
@@ -2833,7 +2833,7 @@ const StringLexer = struct {
                     } else {
                         lexer.skipChar();
                     }
-                }
+                },
             }
         }
 
