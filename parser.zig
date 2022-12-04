@@ -687,6 +687,9 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         .op_lsquare => {
             return parser.parseArrayLiteral();
         },
+        .op_lcurly => {
+            return parser.parseHashOrTupleLiteral(.{});
+        },
         // TODO
         .number => {
             lexer.wants_regex = false;
@@ -1313,8 +1316,137 @@ pub fn parseArrayLiteral(parser: *Parser) !Node {
     return node;
 }
 
-// parseHashOrTupleLiteral
-// parseHashLiteral
+pub fn parseHashOrTupleLiteral(
+    parser: *Parser,
+    options: struct { allow_of: bool = true },
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    const line = lexer.line_number;
+    const column = lexer.token.column_number;
+
+    lexer.slash_is_regex = true;
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    if (lexer.token.type == .op_rcurly) {
+        var end_location: ?Location = lexer.tokenEndLocation();
+        try lexer.skipTokenAndSpace();
+        return parser.newHashLiteral(
+            ArrayList(HashLiteral.Entry).init(allocator),
+            line,
+            column,
+            &end_location,
+            .{},
+        );
+    }
+
+    if (parser.nextComesNamedTupleStart()) {
+        // TODO: implement
+        return parser.unexpectedTokenMsg("unimplemented");
+    }
+
+    var first_is_splat = false;
+    if (lexer.token.type == .op_star) {
+        first_is_splat = true;
+        try lexer.skipTokenAndSpaceOrNewline();
+    }
+
+    const key_location = lexer.token.location();
+    var first_key = try parser.parseOpAssignNoControl(.{});
+    if (first_is_splat) {
+        first_key = try Splat.node(allocator, first_key);
+        first_key.setLocation(location);
+    }
+    switch (lexer.token.type) {
+        .op_colon => {
+            // TODO: implement
+            _ = key_location;
+            return parser.unexpectedTokenMsg("unimplemented");
+        },
+        .op_comma => {
+            // TODO: implement
+            return parser.unexpectedTokenMsg("unimplemented");
+        },
+        .op_rcurly => {
+            // TODO: implement
+            return parser.unexpectedTokenMsg("unimplemented");
+        },
+        .newline => {
+            // TODO: implement
+            return parser.unexpectedTokenMsg("unimplemented");
+        },
+        else => {
+            if (first_is_splat)
+                return parser.unexpectedToken();
+            try parser.check(.op_eq_gt);
+        },
+    }
+    lexer.slash_is_regex = true;
+    // TODO: should skip newline too
+    try lexer.skipTokenAndSpace();
+    return parser.parseHashLiteral(
+        first_key,
+        location,
+        options.allow_of,
+    );
+}
+
+pub fn parseHashLiteral(
+    parser: *Parser,
+    first_key: Node,
+    location: Location,
+    allow_of: bool,
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const line = lexer.line_number;
+    const column = lexer.token.column_number;
+    var end_location: ?Location = null;
+
+    var entries = ArrayList(HashLiteral.Entry).init(allocator);
+    try entries.append(HashLiteral.Entry.init(
+        first_key,
+        try parser.parseOpAssign(.{}),
+    ));
+
+    if (lexer.token.type == .newline) {
+        try lexer.skipTokenAndSpaceOrNewline();
+        try parser.check(.op_rcurly);
+        try lexer.skipTokenAndSpace();
+    } else {
+        try parser.openAt("hash literal", location);
+        {
+            defer parser.close();
+
+            try lexer.skipSpaceOrNewline();
+            if (lexer.token.type == .op_comma) {
+                lexer.slash_is_regex = true;
+                try lexer.skipTokenAndSpaceOrNewline();
+            } else {
+                try lexer.skipSpaceOrNewline();
+                try parser.check(.op_rcurly);
+            }
+
+            while (lexer.token.type != .op_rcurly) {
+                // TODO: implement
+                return parser.unexpectedTokenMsg("unimplemented");
+            }
+            end_location = lexer.tokenEndLocation();
+            try lexer.skipTokenAndSpace();
+        }
+    }
+
+    return parser.newHashLiteral(
+        entries,
+        line,
+        column,
+        &end_location,
+        .{ .allow_of = allow_of },
+    );
+}
 
 pub fn nextComesNamedTupleStart(parser: *const Parser) bool {
     const lexer = &parser.lexer;
@@ -1326,7 +1458,45 @@ pub fn nextComesNamedTupleStart(parser: *const Parser) bool {
 
 // atStringLiteralStart
 // parseTuple
-// newHashLiteral
+
+pub fn newHashLiteral(
+    parser: *Parser,
+    entries: ArrayList(HashLiteral.Entry),
+    line: usize,
+    column: usize,
+    end_location: *?Location,
+    options: struct { allow_of: bool = true },
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    var of: ?HashLiteral.Entry = null;
+
+    if (options.allow_of) {
+        if (lexer.token.isKeyword(.of)) {
+            try lexer.skipTokenAndSpaceOrNewline();
+            const of_key = try parser.parseBareProcType();
+            try parser.check(.op_eq_gt);
+            try lexer.skipTokenAndSpaceOrNewline();
+            const of_value = try parser.parseBareProcType();
+            of = HashLiteral.Entry.init(of_key, of_value);
+            end_location.* = of_value.endLocation();
+        }
+
+        if (entries.items.len == 0 and of == null) {
+            return lexer.raiseAt(
+                "for empty hashes use '{} of KeyType => ValueType'",
+                line,
+                column,
+            );
+        }
+    }
+
+    const node = try HashLiteral.node(allocator, entries, of);
+    node.setEndLocation(end_location.*);
+    return node;
+}
+
 // parseNamedTuple
 // parseNamedTuple
 // parseRequire
@@ -2688,6 +2858,30 @@ fn _main() !void {
     assert(node.array_literal.elements.items.len == 2);
     assert(node.array_literal.elements.items[0] == .number_literal);
     assert(node.array_literal.elements.items[1] == .number_literal);
+
+    // parseHashOrTupleLiteral
+    parser = try Parser.new("{} of self => _");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .hash_literal);
+    assert(node.hash_literal.of.?.key == .self);
+    assert(node.hash_literal.of.?.value == .underscore);
+
+    // parseHashLiteral
+    parser = try Parser.new("{1 => 2\n}");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .hash_literal);
+
+    parser = try Parser.new("{1 => 2,}");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .hash_literal);
+
+    parser = try Parser.new("{1 => 2}");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .hash_literal);
 
     // p("{}\n", .{});
 

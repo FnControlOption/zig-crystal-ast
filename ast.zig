@@ -559,20 +559,38 @@ pub const HashLiteral = struct {
     end_location: ?Location = null,
 
     entries: ArrayList(Entry),
-    of: ?Node = null,
+    of: ?Entry = null,
     name: ?Node = null,
 
-    pub fn allocate(allocator: Allocator, entries: ArrayList(Entry)) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        entries: ArrayList(Entry),
+        of: ?Entry,
+    ) !*@This() {
         var instance = try allocator.create(@This());
-        instance.* = .{ .entries = entries };
+        instance.* = .{
+            .entries = entries,
+            .of = of,
+        };
         return instance;
     }
 
-    pub fn node(allocator: Allocator, entries: ArrayList(Entry)) !Node {
-        return Node{ .hash_literal = try allocate(allocator, entries) };
+    pub fn node(
+        allocator: Allocator,
+        entries: ArrayList(Entry),
+        of: ?Entry,
+    ) !Node {
+        return Node{ .hash_literal = try allocate(allocator, entries, of) };
     }
 
-    pub const Entry = struct { key: Node, value: Node };
+    pub const Entry = struct {
+        key: Node,
+        value: Node,
+
+        pub fn init(key: Node, value: Node) Entry {
+            return .{ .key = key, .value = value };
+        }
+    };
 };
 
 pub const NamedTupleLiteral = struct {
