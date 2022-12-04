@@ -19,6 +19,11 @@ const ast = @import("ast.zig");
 const Node = ast.Node;
 const Visibiity = ast.Visibility;
 
+const Error = error{SyntaxError} ||
+    error{ InvalidCharacter, Overflow } ||
+    Allocator.Error ||
+    Utf8EncodeError;
+
 const Alias = ast.Alias;
 const And = ast.And;
 const Annotation = ast.Annotation;
@@ -137,6 +142,7 @@ assigns_special_var: bool = false,
 def_nest: usize = 0,
 fun_nest: usize = 0,
 type_nest: usize = 0,
+is_constant_assignment: bool = false,
 
 call_args_start_locations: ArrayList(Location),
 temp_arg_count: usize = 0,
@@ -305,7 +311,7 @@ pub fn parseMultiAssign(parser: *Parser) !Node {
 //         multi.setLocation(location);
 //         return error.Unimplemented;
 //     } else {
-//         return parser.unexpectedToken();
+//         return parser.unexpectedToken(.{});
 //     }
 // }
 
@@ -383,10 +389,158 @@ pub fn parseOpAssign(
         allow_ops: bool = true,
         allow_suffix: bool = true,
     },
-) !Node {
-    // TODO: implement
-    _ = options;
-    return parser.parseQuestionColon();
+) Error!Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const doc = lexer.token.doc();
+    const location = lexer.token.location();
+    const start_token = lexer.token;
+
+    var atomic = try parser.parseQuestionColon();
+
+    var allow_ops = options.allow_ops;
+    while (true) {
+        const name_location = lexer.token.location();
+
+        switch (lexer.token.type) {
+            .space => {
+                try lexer.skipToken();
+                continue;
+            },
+            .ident => {
+                if (!options.allow_suffix)
+                    return parser.unexpectedToken(.{});
+                break;
+            },
+            .op_eq => {
+                lexer.slash_is_regex = true;
+                if (atomic == .call and
+                    std.mem.eql(u8, atomic.call.name, "[]"))
+                {
+                    // TODO: implement
+                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                } else {
+                    if (!canBeAssigned(atomic)) break;
+
+                    if (atomic == .path and
+                        (parser.insideDef() or
+                        parser.insideFun() or
+                        parser.is_constant_assignment))
+                    {
+                        return lexer.raise("dynamic constant assignment. Constants can only be declared at the top level or inside other types.");
+                    }
+
+                    if (atomic == .path)
+                        parser.is_constant_assignment = true;
+
+                    if (atomic == .@"var" and
+                        std.mem.eql(u8, atomic.@"var".name, "self"))
+                    {
+                        return lexer.raiseLoc(
+                            "can't change the value of self",
+                            location,
+                        );
+                    }
+
+                    if (atomic == .call and
+                        (std.mem.endsWith(u8, atomic.call.name, "?") or
+                        std.mem.endsWith(u8, atomic.call.name, "!")))
+                    {
+                        return parser.unexpectedToken(.{ .token = start_token });
+                    }
+
+                    if (atomic == .call) {
+                        const v = try Var.node(
+                            allocator,
+                            atomic.call.name,
+                        );
+                        v.copyLocation(atomic);
+                        atomic = v;
+                    }
+
+                    try lexer.skipTokenAndSpaceOrNewline();
+
+                    var needs_new_scope = false;
+                    switch (atomic) {
+                        .path => {
+                            needs_new_scope = true;
+                        },
+                        .instance_var => {
+                            needs_new_scope = parser.def_nest == 0;
+                        },
+                        .class_var => {
+                            needs_new_scope = parser.def_nest == 0;
+                        },
+                        .@"var" => |v| {
+                            if (v.isSpecialVar())
+                                parser.assigns_special_var = true;
+                        },
+                        else => {
+                            needs_new_scope = false;
+                        }
+                    }
+
+                    const atomic_value = blk: {
+                        if (needs_new_scope) try parser.pushIsolatedVarScope();
+                        defer if (needs_new_scope) parser.popVarScope();
+
+                        if (lexer.token.isKeyword(.uninitialized) and
+                            (atomic == .@"var" or
+                            atomic == .instance_var or
+                            atomic == .class_var or
+                            atomic == .global))
+                        {
+                            // TODO: implement
+                            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                        } else {
+                            if (atomic == .@"var" and
+                                !parser.isVar(atomic.@"var".name))
+                            {
+                                const name = atomic.@"var".name;
+                                const already_assigned = parser.assigned_vars.contains(name);
+                                if (!already_assigned)
+                                    try parser.assigned_vars.put(name, {});
+                                defer {
+                                    if (!already_assigned)
+                                        _ = parser.assigned_vars.remove(name);
+                                }
+                                break :blk try parser.parseOpAssignNoControl(.{});
+                            } else {
+                                break :blk try parser.parseOpAssignNoControl(.{});
+                            }
+                        }
+                    };
+
+                    if (atomic == .path)
+                        parser.is_constant_assignment = false;
+
+                    try parser.pushVar(atomic);
+
+                    atomic = try Assign.node(
+                        allocator,
+                        atomic,
+                        atomic_value,
+                        .{ .doc = doc },
+                    );
+                    atomic.setLocation(location);
+                    return atomic;
+                }
+            },
+            else => |token_type| {
+                if (token_type.isAssignmentOperator()) {
+                    // TODO: implement
+                    _ = name_location;
+                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                } else {
+                    break;
+                }
+            },
+        }
+        allow_ops = true;
+    }
+
+    return atomic;
 }
 
 pub fn parseQuestionColon(parser: *Parser) !Node {
@@ -656,7 +810,7 @@ pub fn parseRespondsToName(parser: *Parser) ![]const u8 {
     const lexer = &parser.lexer;
 
     if (lexer.token.type != .symbol) {
-        return parser.unexpectedTokenMsg("expected symbol");
+        return parser.unexpectedToken(.{ .msg = "expected symbol" });
     }
 
     return lexer.token.value.string;
@@ -837,6 +991,9 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             }
         },
         // TODO
+        .class_var => {
+            return parser.newNodeCheckTypeDeclaration(ClassVar);
+        },
         .underscore => {
             const node = try Underscore.node(allocator);
             try parser.skipNodeToken(node);
@@ -901,13 +1058,41 @@ pub fn nextComesColonSpace(parser: *Parser) bool {
     return false;
 }
 
-// newNodeCheckTypeDeclaration
-// newNodeCheckTypeDeclaration
+pub fn newNodeCheckTypeDeclaration(
+    parser: *Parser,
+    comptime Exp: type,
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const name = lexer.token.value.string;
+    const v = try Exp.node(allocator, name);
+    v.setLocation(lexer.token.location());
+    v.setEndLocation(lexer.tokenEndLocation());
+    lexer.wants_regex = false;
+    try lexer.skipTokenAndSpace();
+
+    if (parser.no_type_declaration == 0 and
+        lexer.token.type == .op_colon)
+    {
+        return parser.parseTypeDeclaration(v);
+    } else {
+        return v;
+    }
+}
+
 // parseGenericOrCustomLiteral
 // parseCustomLiteral
 // checkNotInsideDef
-// isInsideDef
-// isInsideFun
+
+pub fn insideDef(parser: *const Parser) bool {
+    return parser.def_nest > 0;
+}
+
+pub fn insideFun(parser: *const Parser) bool {
+    return parser.fun_nest > 0;
+}
+
 // parseAnnotation
 // parseBegin
 // parseExceptionHandler
@@ -951,7 +1136,7 @@ pub fn parseParenthesizedExpression(parser: *Parser) !Node {
     }
 
     // TODO: implement
-    return parser.unexpectedTokenMsg("unimplemented");
+    return parser.unexpectedToken(.{ .msg = "unimplemented" });
 }
 
 // parseFunLiteral
@@ -1000,7 +1185,7 @@ pub fn parseDelimiter(
 
     if (delimiter_state.delimiters == .heredoc) {
         // TODO: implement
-        return parser.unexpectedTokenMsg("unimplemented");
+        return parser.unexpectedToken(.{ .msg = "unimplemented" });
     }
 
     _ = try lexer.nextStringToken(delimiter_state);
@@ -1043,7 +1228,7 @@ pub fn parseDelimiter(
     var result: Node = undefined;
     if (has_interpolation) {
         // TODO: implement
-        return parser.unexpectedTokenMsg("unimplemented");
+        return parser.unexpectedToken(.{ .msg = "unimplemented" });
     } else {
         const string = try parser.combinePieces(pieces, delimiter_state);
         result = try StringLiteral.node(allocator, string);
@@ -1058,7 +1243,7 @@ pub fn parseDelimiter(
         },
         .regex => {
             // TODO: implement
-            return parser.unexpectedTokenMsg("unimplemented");
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
         },
         else => {
             // no special treatment
@@ -1080,7 +1265,7 @@ fn combinePieces(
     const allocator = parser.lexer.allocator;
     if (needsHeredocIndentRemoved(delimiter_state)) {
         // TODO: implement
-        return parser.unexpectedTokenMsg("unimplemented");
+        return parser.unexpectedToken(.{ .msg = "unimplemented" });
     } else {
         var buffer = ArrayList(u8).init(allocator);
         for (pieces.items) |piece| {
@@ -1113,7 +1298,7 @@ pub fn consumeDelimiter(
             .delimiter_end => {
                 if (delimiter_state.delimiters == .regex) {
                     // TODO: implement
-                    return parser.unexpectedTokenMsg("unimplemented");
+                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
                 }
                 token_end_location.* = lexer.tokenEndLocation();
                 try lexer.skipToken();
@@ -1357,7 +1542,7 @@ pub fn parseHashOrTupleLiteral(
 
     if (parser.nextComesNamedTupleStart()) {
         // TODO: implement
-        return parser.unexpectedTokenMsg("unimplemented");
+        return parser.unexpectedToken(.{ .msg = "unimplemented" });
     }
 
     var first_is_splat = false;
@@ -1376,23 +1561,23 @@ pub fn parseHashOrTupleLiteral(
         .op_colon => {
             // TODO: implement
             _ = key_location;
-            return parser.unexpectedTokenMsg("unimplemented");
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
         },
         .op_comma => {
             // TODO: implement
-            return parser.unexpectedTokenMsg("unimplemented");
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
         },
         .op_rcurly => {
             // TODO: implement
-            return parser.unexpectedTokenMsg("unimplemented");
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
         },
         .newline => {
             // TODO: implement
-            return parser.unexpectedTokenMsg("unimplemented");
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
         },
         else => {
             if (first_is_splat)
-                return parser.unexpectedToken();
+                return parser.unexpectedToken(.{});
             try parser.check(.op_eq_gt);
         },
     }
@@ -1445,7 +1630,7 @@ pub fn parseHashLiteral(
 
             while (lexer.token.type != .op_rcurly) {
                 // TODO: implement
-                return parser.unexpectedTokenMsg("unimplemented");
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
             }
             end_location = lexer.tokenEndLocation();
             try lexer.skipTokenAndSpace();
@@ -1577,7 +1762,7 @@ pub fn parseVarOrCall(
         const obj = try Var.node(allocator, "self");
         obj.setLocation(location);
         // TODO: implement
-        return parser.unexpectedTokenMsg("unimplemented");
+        return parser.unexpectedToken(.{ .msg = "unimplemented" });
         // return parser.parseNegationSuffix(obj);
     }
 
@@ -1585,23 +1770,23 @@ pub fn parseVarOrCall(
         switch (lexer.token.value.keyword) {
             .is_a_question => {
                 // TODO: implement
-                return parser.unexpectedTokenMsg("unimplemented");
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
             },
             .as => {
                 // TODO: implement
-                return parser.unexpectedTokenMsg("unimplemented");
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
             },
             .as_question => {
                 // TODO: implement
-                return parser.unexpectedTokenMsg("unimplemented");
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
             },
             .responds_to_question => {
                 // TODO: implement
-                return parser.unexpectedTokenMsg("unimplemented");
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
             },
             .nil_question => {
                 // TODO: implement
-                return parser.unexpectedTokenMsg("unimplemented");
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
             },
             else => {
                 // Not a special call, go on
@@ -1701,21 +1886,21 @@ pub fn parseVarOrCall(
     const node = blk: {
         if (block != null or block_arg != null or is_global) {
             // TODO: implement
-            return parser.unexpectedTokenMsg("unimplemented");
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
         } else {
             if (args) |a| {
                 // TODO: implement
                 _ = a;
-                return parser.unexpectedTokenMsg("unimplemented");
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
             } else {
                 if (parser.no_type_declaration == 0 and
                     lexer.token.type == .op_colon)
                 {
                     // TODO: implement
-                    return parser.unexpectedTokenMsg("unimplemented");
+                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
                 } else if (!force_call and is_var) {
                     // TODO: implement
-                    return parser.unexpectedTokenMsg("unimplemented");
+                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
                 } else {
                     if (!force_call and
                         named_args == null and
@@ -1938,7 +2123,7 @@ pub fn parseAtomicType(parser: *Parser) !Node {
             if (lexer.token.value.isKeyword(.typeof)) {
                 return parser.parseTypeof();
             }
-            return parser.unexpectedToken();
+            return parser.unexpectedToken(.{});
         },
         .underscore => {
             try lexer.skipTokenAndSpace();
@@ -1948,7 +2133,7 @@ pub fn parseAtomicType(parser: *Parser) !Node {
         },
         // TODO
         else => {
-            return parser.unexpectedToken();
+            return parser.unexpectedToken(.{});
         },
     }
 }
@@ -2032,8 +2217,7 @@ pub fn parseTypeSplatUnionType(parser: *Parser) !Node {
     return t;
 }
 
-const ParseTypeArgError = error{SyntaxError} || Allocator.Error || Utf8EncodeError;
-pub fn parseTypeArg(parser: *Parser) ParseTypeArgError!Node {
+pub fn parseTypeArg(parser: *Parser) Error!Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
@@ -2437,7 +2621,7 @@ pub fn canBeAssigned(node: Node) bool {
             return true;
         },
         .call => |call| {
-            // TODO: check if [] has parentheses?
+            // TODO: check if [] has parentheses
             // a = [:foo] * 3; a[0] = :bar; a.[](1) = :baz; p a
             // a = [:foo] * 3; a[0] = :bar; a.[]=(1, :baz); p a
             return (call.obj == null and call.args.items.len == 0 and call.block == null) or std.mem.eql(u8, call.name, "[]");
@@ -2642,29 +2826,33 @@ pub fn checkConst(parser: *Parser) ![]const u8 {
     return lexer.token.value.string;
 }
 
-pub fn unexpectedToken(parser: *Parser) error{ SyntaxError, OutOfMemory } {
-    return parser.unexpectedTokenMsg(null);
-}
-
-pub fn unexpectedTokenMsg(parser: *Parser, msg: ?[]const u8) error{ SyntaxError, OutOfMemory } {
+pub fn unexpectedToken(
+    parser: *Parser,
+    options: struct {
+        msg: ?[]const u8 = null,
+        token: ?Token = null,
+    },
+) error{ SyntaxError, OutOfMemory } {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
+
+    const token = options.token orelse lexer.token;
     var buffer = ArrayList(u8).init(allocator);
     var writer = buffer.writer();
     try writer.writeAll("unexpected token: ");
-    if (lexer.token.type == .eof) {
+    if (token.type == .eof) {
         try writer.writeAll("EOF");
     } else {
         try writer.writeByte('"');
-        try lexer.token.toString(writer);
+        try token.toString(writer);
         try writer.writeByte('"');
     }
-    if (msg) |m| {
+    if (options.msg) |msg| {
         try writer.writeAll(" (");
-        try writer.writeAll(m);
+        try writer.writeAll(msg);
         try writer.writeByte(')');
     }
-    return lexer.raiseFor(buffer.items, lexer.token);
+    return lexer.raiseFor(buffer.items, token);
 }
 
 pub fn unexpectedTokenInAtomic(parser: *Parser) error{ SyntaxError, OutOfMemory } {
@@ -2681,7 +2869,7 @@ pub fn unexpectedTokenInAtomic(parser: *Parser) error{ SyntaxError, OutOfMemory 
         return lexer.raiseLoc(message, unclosed.location);
     }
 
-    return parser.unexpectedToken();
+    return parser.unexpectedToken(.{});
 }
 
 pub fn isVar(parser: *const Parser, name: []const u8) bool {
@@ -3217,6 +3405,17 @@ fn _main() !void {
     lexer = &parser.lexer;
     node = try parser.parse();
     assert(node == .call);
+
+    // parseOpAssign + Assign.node
+    parser = try Parser.new("foo = bar");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .assign);
+
+    parser = try Parser.new("@@foo = bar");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .assign);
 
     // p("{}\n", .{});
 

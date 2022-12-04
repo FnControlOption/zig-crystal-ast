@@ -237,24 +237,24 @@ pub const Expressions = struct {
         }
     }
 
-    pub fn isEmpty(self: @This()) bool {
+    pub fn isEmpty(self: *const @This()) bool {
         return self.expressions.items.len == 0;
     }
 
-    pub fn at(self: @This(), i: usize) Node {
+    pub fn at(self: *const @This(), i: usize) Node {
         return self.expressions.items[i];
     }
 
-    pub fn last(self: @This()) Node {
+    pub fn last(self: *const @This()) Node {
         const expressions = self.expressions.items;
         return expressions[expressions.len - 1];
     }
 
-    pub fn isSingleExpression(self: @This()) bool {
+    pub fn isSingleExpression(self: *const @This()) bool {
         return self.expressions.items.len == 1;
     }
 
-    pub fn singleExpression(self: @This()) ?Node {
+    pub fn singleExpression(self: *const @This()) ?Node {
         if (self.isSingleExpression()) {
             return self.expressions.items[0].singleExpression();
         } else {
@@ -415,7 +415,7 @@ pub const NumberLiteral = struct {
         return node(allocator, value, kind);
     }
 
-    pub fn hasSign(self: @This()) bool {
+    pub fn hasSign(self: *const @This()) bool {
         return self.value[0] == '+' or self.value[0] == '-';
     }
 };
@@ -695,26 +695,32 @@ pub const TupleLiteral = struct {
     }
 };
 
-fn SimpleNamedNode(comptime tag_name: []const u8) type {
+fn SpecialVar(comptime This: type) type {
     return struct {
-        location: ?Location = null,
-        end_location: ?Location = null,
-
-        name: []const u8,
-
-        pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
-            var instance = try allocator.create(@This());
-            instance.* = .{ .name = name };
-            return instance;
-        }
-
-        pub fn node(allocator: Allocator, name: []const u8) !Node {
-            return @unionInit(Node, tag_name, try allocate(allocator, name));
+        pub fn isSpecialVar(this: *const This) bool {
+            return std.mem.startsWith(u8, this.name, "$");
         }
     };
 }
 
-pub const Var = SimpleNamedNode("var");
+pub const Var = struct {
+    pub usingnamespace SpecialVar(@This());
+
+    location: ?Location = null,
+    end_location: ?Location = null,
+
+    name: []const u8,
+
+    pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{ .name = name };
+        return instance;
+    }
+
+    pub fn node(allocator: Allocator, name: []const u8) !Node {
+        return Node{ .@"var" = try allocate(allocator, name) };
+    }
+};
 
 pub const Block = struct {
     location: ?Location = null,
@@ -894,7 +900,31 @@ pub const Assign = struct {
 
     target: Node,
     value: Node,
-    doc: ?[]const u8 = null,
+    doc: ?[]const u8,
+
+    pub fn allocate(
+        allocator: Allocator,
+        target: Node,
+        value: Node,
+        options: struct { doc: ?[]const u8 = null },
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .target = target,
+            .value = value,
+            .doc = options.doc,
+        };
+        return instance;
+    }
+
+    pub fn node(
+        allocator: Allocator,
+        target: Node,
+        value: Node,
+        options: anytype,
+    ) !Node {
+        return Node{ .assign = try allocate(allocator, target, value, options) };
+    }
 };
 
 pub const OpAssign = struct {
@@ -934,6 +964,25 @@ pub const MultiAssign = struct {
         return Node{ .multi_assign = try allocate(allocator, targets, values) };
     }
 };
+
+fn SimpleNamedNode(comptime tag_name: []const u8) type {
+    return struct {
+        location: ?Location = null,
+        end_location: ?Location = null,
+
+        name: []const u8,
+
+        pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
+            var instance = try allocator.create(@This());
+            instance.* = .{ .name = name };
+            return instance;
+        }
+
+        pub fn node(allocator: Allocator, name: []const u8) !Node {
+            return @unionInit(Node, tag_name, try allocate(allocator, name));
+        }
+    };
+}
 
 pub const InstanceVar = SimpleNamedNode("instance_var");
 
