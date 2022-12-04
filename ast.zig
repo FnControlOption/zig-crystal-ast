@@ -196,16 +196,29 @@ pub const Expressions = struct {
     end_location: ?Location = null,
 
     expressions: ArrayList(Node),
-    keyword: Keyword = .none,
+    keyword: Keyword,
 
-    pub fn allocate(allocator: Allocator, expressions: ArrayList(Node)) !*@This() {
+    pub fn allocate(
+        allocator: Allocator,
+        expressions: ArrayList(Node),
+        options: struct {
+            keyword: Keyword = .none,
+        },
+    ) !*@This() {
         var instance = try allocator.create(@This());
-        instance.* = .{ .expressions = expressions };
+        instance.* = .{
+            .expressions = expressions,
+            .keyword = options.keyword,
+        };
         return instance;
     }
 
-    pub fn node(allocator: Allocator, expressions: ArrayList(Node)) !Node {
-        return Node{ .expressions = try allocate(allocator, expressions) };
+    pub fn node(
+        allocator: Allocator,
+        expressions: ArrayList(Node),
+        options: anytype,
+    ) !Node {
+        return Node{ .expressions = try allocate(allocator, expressions, options) };
     }
 
     pub fn from(allocator: Allocator, obj: anytype) !Node {
@@ -215,7 +228,7 @@ pub const Expressions = struct {
                 switch (obj.items.len) {
                     0 => return Nop.node(allocator),
                     1 => return obj.items[0],
-                    else => return node(allocator, obj),
+                    else => return node(allocator, obj, .{}),
                 }
             },
             Node => return obj,
@@ -1969,17 +1982,17 @@ pub fn main() !void {
     p("{}\n", .{(try BoolLiteral.node(allocator, true)).isTrueLiteral()});
     p("{}\n", .{(try BoolLiteral.node(allocator, false)).isFalseLiteral()});
     p("{}\n", .{(try NumberLiteral.fromNumber(allocator, 1)).singleExpression()});
-    p("{}\n", .{(try Expressions.node(allocator, ArrayList(Node).init(allocator))).singleExpression()});
+    p("{}\n", .{(try Expressions.node(allocator, ArrayList(Node).init(allocator), .{})).singleExpression()});
     {
         var expressions = ArrayList(Node).init(allocator);
         try expressions.append(try NumberLiteral.fromNumber(allocator, 1));
-        p("{}\n", .{(try Expressions.node(allocator, expressions)).singleExpression()});
+        p("{}\n", .{(try Expressions.node(allocator, expressions, .{})).singleExpression()});
     }
     {
         var expressions = ArrayList(Node).init(allocator);
         try expressions.append(try NumberLiteral.fromNumber(allocator, 1));
         try expressions.append(try NumberLiteral.fromNumber(allocator, 2));
-        p("{}\n", .{(try Expressions.node(allocator, expressions)).singleExpression()});
+        p("{}\n", .{(try Expressions.node(allocator, expressions, .{})).singleExpression()});
     }
     {
         var values = ArrayList(Node).init(allocator);

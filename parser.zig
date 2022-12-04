@@ -678,9 +678,14 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
     switch (lexer.token.type) {
-        // TODO
+        .op_lparen => {
+            return parser.parseParenthesizedExpression();
+        },
         .op_lsquare_rsquare => {
             return parser.parseEmptyArrayLiteral();
+        },
+        .op_lsquare => {
+            return parser.parseArrayLiteral();
         },
         // TODO
         .number => {
@@ -905,7 +910,34 @@ pub fn nextComesColonSpace(parser: *Parser) bool {
 // parseTypeVars
 // parseModuleDef
 // parseAnnotationDef
-// parseParenthesizedExpression
+
+pub fn parseParenthesizedExpression(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    lexer.slash_is_regex = true;
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    if (lexer.token.type == .op_rparen) {
+        const end_location = lexer.tokenEndLocation();
+        var expressions = ArrayList(Node).init(allocator);
+        try expressions.append(try Nop.node(allocator));
+        const node = try Expressions.node(
+            allocator,
+            expressions,
+            .{ .keyword = .paren },
+        );
+        node.setLocation(location);
+        node.setEndLocation(end_location);
+        try parser.skipNodeToken(node);
+        return node;
+    }
+
+    // TODO: implement
+    return parser.unexpectedTokenMsg("unimplemented");
+}
+
 // parseFunLiteral
 // checkNotPipeBeforeProcLiteralBody
 // parseFunLiteralParam
@@ -1178,8 +1210,11 @@ pub fn parseStringOrSymbolArray(
         }
     }
 
-    const of = try Path.global(allocator, elements_type);
-    return ArrayLiteral.node(allocator, strings, .{ .of = of });
+    return ArrayLiteral.node(
+        allocator,
+        strings,
+        .{ .of = try Path.global(allocator, elements_type) },
+    );
 }
 
 pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
@@ -1193,8 +1228,11 @@ pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
     if (lexer.token.isKeyword(.of)) {
         try lexer.skipTokenAndSpaceOrNewline();
         const of = try parser.parseBareProcType();
-        const elements = ArrayList(Node).init(allocator);
-        const node = try ArrayLiteral.node(allocator, elements, .{ .of = of });
+        const node = try ArrayLiteral.node(
+            allocator,
+            ArrayList(Node).init(allocator),
+            .{ .of = of },
+        );
         node.copyEndLocation(of);
         return node;
     } else {
@@ -1202,7 +1240,79 @@ pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
     }
 }
 
-// parseArrayLiteral
+pub fn parseArrayLiteral(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const line = lexer.line_number;
+    const column = lexer.token.column_number;
+
+    lexer.slash_is_regex = true;
+
+    var exps = ArrayList(Node).init(allocator);
+    var end_location: ?Location = null;
+
+    try parser.open("array literal");
+    {
+        defer parser.close();
+
+        try lexer.skipTokenAndSpaceOrNewline();
+        while (lexer.token.type != .op_rsquare) {
+            const exp_location = lexer.token.location();
+
+            if (lexer.token.type == .op_star) {
+                try lexer.skipTokenAndSpaceOrNewline();
+                const exp = try Splat.node(
+                    allocator,
+                    try parser.parseOpAssignNoControl(.{}),
+                );
+                exp.setLocation(exp_location);
+                try exps.append(exp);
+            } else {
+                try exps.append(
+                    try parser.parseOpAssignNoControl(.{}),
+                );
+            }
+
+            end_location = lexer.tokenEndLocation();
+            try lexer.skipSpace();
+
+            if (lexer.token.type == .op_comma) {
+                lexer.slash_is_regex = true;
+                try lexer.skipTokenAndSpaceOrNewline();
+            } else {
+                try lexer.skipSpaceOrNewline();
+                try parser.check(.op_rsquare);
+                break;
+            }
+        }
+        lexer.wants_regex = false;
+        try lexer.skipTokenAndSpace();
+    }
+
+    var of: ?Node = null;
+    if (lexer.token.isKeyword(.of)) {
+        try lexer.skipTokenAndSpaceOrNewline();
+        const t = try parser.parseBareProcType();
+        of = t;
+        end_location = t.endLocation();
+    } else if (exps.items.len == 0) {
+        return lexer.raiseAt(
+            "for empty arrays use '[] of ElementType'",
+            line,
+            column,
+        );
+    }
+
+    const node = try ArrayLiteral.node(
+        allocator,
+        exps,
+        .{ .of = of },
+    );
+    node.setEndLocation(end_location);
+    return node;
+}
+
 // parseHashOrTupleLiteral
 // parseHashLiteral
 
@@ -2561,6 +2671,23 @@ fn _main() !void {
     node = try parser.parse();
     assert(node == .string_literal);
     assert(std.mem.eql(u8, node.string_literal.value, "\"foo\" bar"));
+
+    // parseParenthesizedExpression
+    parser = try Parser.new("()");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .expressions);
+    assert(node.expressions.expressions.items.len == 1);
+    assert(node.expressions.expressions.items[0] == .nop);
+
+    // parseArrayLiteral
+    parser = try Parser.new("[1, 2]");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .array_literal);
+    assert(node.array_literal.elements.items.len == 2);
+    assert(node.array_literal.elements.items[0] == .number_literal);
+    assert(node.array_literal.elements.items[1] == .number_literal);
 
     // p("{}\n", .{});
 
