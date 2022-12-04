@@ -164,7 +164,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
         .call_args_start_locations = ArrayList(Location).init(allocator),
         .assigned_vars = ArrayList([]const u8).init(allocator),
     };
-    try parser.createIsolatedVarScope();
+    try parser.pushIsolatedVarScope();
     return parser;
 }
 
@@ -813,6 +813,12 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                                 const node = try BoolLiteral.node(allocator, false);
                                 try parser.skipNodeToken(node);
                                 return node;
+                            };
+                        },
+                        // TODO
+                        .typeof => {
+                            return try parser.checkTypeDeclaration() orelse {
+                                return try parser.parseTypeof();
                             };
                         },
                         // TODO
@@ -1652,7 +1658,7 @@ pub fn parseAtomicType(parser: *Parser) !Node {
                 return parser.makeNilableType(node);
             }
             if (lexer.token.value.isKeyword(.typeof)) {
-                // TODO
+                return parser.parseTypeof();
             }
             return parser.unexpectedToken();
         },
@@ -1996,7 +2002,41 @@ fn findDelimiterOrTypeSuffix(parser: *Parser) !bool {
     }
 }
 
-// parseTypeof
+pub fn parseTypeof(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+
+    try lexer.skipTokenAndSpace();
+    try parser.check(.op_lparen);
+    try lexer.skipTokenAndSpaceOrNewline();
+    if (lexer.token.type == .op_rparen) {
+        return lexer.raise("missing typeof argument");
+    }
+
+    try parser.pushLexicalVarScope();
+    defer parser.popVarScope();
+
+    var exps = ArrayList(Node).init(allocator);
+    while (lexer.token.type != .op_rparen) {
+        try exps.append(try parser.parseOpAssign(.{}));
+        if (lexer.token.type == .op_comma) {
+            try lexer.skipTokenAndSpaceOrNewline();
+        } else {
+            try lexer.skipSpaceOrNewline();
+            try parser.check(.op_rparen);
+        }
+    }
+
+    const end_location = lexer.tokenEndLocation();
+    try lexer.skipTokenAndSpace();
+
+    const node = try TypeOf.node(allocator, exps);
+    node.setLocation(location);
+    node.setEndLocation(end_location);
+    return node;
+}
 // parseVisibilityModifier
 // parseAsm
 // parseAsmOperands
@@ -2165,19 +2205,19 @@ pub fn consumeDefEqualsSignSkipSpace(parser: *Parser) !bool {
     }
 }
 
-pub fn createIsolatedVarScope(parser: *Parser) !void {
+pub fn pushIsolatedVarScope(parser: *Parser) !void {
     const allocator = parser.lexer.allocator;
     const scope = StringHashMap(void).init(allocator);
     try parser.var_scopes.append(scope);
 }
 
-pub fn createLexicalVarScope(parser: *Parser) !void {
+pub fn pushLexicalVarScope(parser: *Parser) !void {
     const var_scopes = parser.var_scopes.items;
     const current_scope = try var_scopes[var_scopes.len - 1].clone();
     try parser.var_scopes.append(current_scope);
 }
 
-pub fn resetVarScope(parser: *Parser) void {
+pub fn popVarScope(parser: *Parser) void {
     _ = parser.var_scopes.pop();
 }
 
@@ -2441,17 +2481,17 @@ fn _main() !void {
     assert(var_scopes.len == 1);
     assert(var_scopes[var_scopes.len - 1].count() == 3);
 
-    try parser.createIsolatedVarScope();
+    try parser.pushIsolatedVarScope();
     var_scopes = parser.var_scopes.items;
     assert(var_scopes.len == 2);
     assert(var_scopes[var_scopes.len - 1].count() == 0);
 
-    parser.resetVarScope();
+    parser.popVarScope();
     var_scopes = parser.var_scopes.items;
     assert(var_scopes.len == 1);
     assert(var_scopes[var_scopes.len - 1].count() == 3);
 
-    try parser.createLexicalVarScope();
+    try parser.pushLexicalVarScope();
     var_scopes = parser.var_scopes.items;
     assert(var_scopes.len == 2);
     assert(var_scopes[var_scopes.len - 1].count() == 3);
@@ -2882,6 +2922,25 @@ fn _main() !void {
     lexer = &parser.lexer;
     node = try parser.parse();
     assert(node == .hash_literal);
+
+    // parseTypeof
+    parser = try Parser.new("[] of typeof(123)");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .array_literal);
+    node = node.array_literal.of.?;
+    assert(node == .type_of);
+    assert(node.type_of.expressions.items.len == 1);
+    node = node.type_of.expressions.items[0];
+    assert(node == .number_literal);
+
+    parser = try Parser.new("typeof(123)");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .type_of);
+    assert(node.type_of.expressions.items.len == 1);
+    node = node.type_of.expressions.items[0];
+    assert(node == .number_literal);
 
     // p("{}\n", .{});
 

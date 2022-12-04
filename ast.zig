@@ -1754,6 +1754,24 @@ pub const TypeOf = struct {
     end_location: ?Location = null,
 
     expressions: ArrayList(Node),
+
+    pub fn allocate(
+        allocator: Allocator,
+        expressions: ArrayList(Node),
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{ .expressions = expressions };
+        return instance;
+    }
+
+    pub fn node(
+        allocator: Allocator,
+        expressions: ArrayList(Node),
+    ) !Node {
+        return Node{
+            .type_of = try allocate(allocator, expressions),
+        };
+    }
 };
 
 pub const Annotation = struct {
