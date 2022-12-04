@@ -734,7 +734,7 @@ pub const Block = struct {
     pub fn allocate(
         allocator: Allocator,
         args: ArrayList(*Var),
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -747,7 +747,7 @@ pub const Block = struct {
     pub fn node(
         allocator: Allocator,
         args: ArrayList(*Var),
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .block = try allocate(allocator, args, body) };
     }
@@ -839,8 +839,8 @@ pub const If = struct {
     pub fn allocate(
         allocator: Allocator,
         cond: Node,
-        then: ?Node,
-        @"else": ?Node,
+        then: anytype,
+        @"else": anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -854,8 +854,8 @@ pub const If = struct {
     pub fn node(
         allocator: Allocator,
         cond: Node,
-        then: ?Node,
-        @"else": ?Node,
+        then: anytype,
+        @"else": anytype,
     ) !Node {
         return Node{ .@"if" = try allocate(allocator, cond, then, @"else") };
     }
@@ -872,8 +872,8 @@ pub const Unless = struct {
     pub fn allocate(
         allocator: Allocator,
         cond: Node,
-        then: ?Node,
-        @"else": ?Node,
+        then: anytype,
+        @"else": anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -887,8 +887,8 @@ pub const Unless = struct {
     pub fn node(
         allocator: Allocator,
         cond: Node,
-        then: ?Node,
-        @"else": ?Node,
+        then: anytype,
+        @"else": anytype,
     ) !Node {
         return Node{ .unless = try allocate(allocator, cond, then, @"else") };
     }
@@ -1102,7 +1102,7 @@ pub const Def = struct {
         allocator: Allocator,
         name: []const u8,
         args: ArrayList(*Arg),
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1117,7 +1117,7 @@ pub const Def = struct {
         allocator: Allocator,
         name: []const u8,
         args: ArrayList(*Arg),
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .def = try allocate(allocator, name, args, body) };
     }
@@ -1140,7 +1140,7 @@ pub const Macro = struct {
         allocator: Allocator,
         name: []const u8,
         args: ArrayList(*Arg),
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1155,7 +1155,7 @@ pub const Macro = struct {
         allocator: Allocator,
         name: []const u8,
         args: ArrayList(*Arg),
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .macro = try allocate(allocator, name, args, body) };
     }
@@ -1263,7 +1263,7 @@ pub const When = struct {
     pub fn allocate(
         allocator: Allocator,
         conds: ArrayList(Node),
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1276,7 +1276,7 @@ pub const When = struct {
     pub fn node(
         allocator: Allocator,
         conds: ArrayList(Node),
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .when = try allocate(allocator, conds, body) };
     }
@@ -1363,7 +1363,7 @@ pub const ClassDef = struct {
     pub fn allocate(
         allocator: Allocator,
         name: *Path,
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1376,7 +1376,7 @@ pub const ClassDef = struct {
     pub fn node(
         allocator: Allocator,
         name: *Path,
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .class_def = try allocate(allocator, name, body) };
     }
@@ -1396,7 +1396,7 @@ pub const ModuleDef = struct {
     pub fn allocate(
         allocator: Allocator,
         name: *Path,
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1409,7 +1409,7 @@ pub const ModuleDef = struct {
     pub fn node(
         allocator: Allocator,
         name: *Path,
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .module_def = try allocate(allocator, name, body) };
     }
@@ -1433,7 +1433,7 @@ pub const While = struct {
     pub fn allocate(
         allocator: Allocator,
         cond: Node,
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1446,7 +1446,7 @@ pub const While = struct {
     pub fn node(
         allocator: Allocator,
         cond: Node,
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .@"while" = try allocate(allocator, cond, body) };
     }
@@ -1462,7 +1462,7 @@ pub const Until = struct {
     pub fn allocate(
         allocator: Allocator,
         cond: Node,
-        body: ?Node,
+        body: anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1475,7 +1475,7 @@ pub const Until = struct {
     pub fn node(
         allocator: Allocator,
         cond: Node,
-        body: ?Node,
+        body: anytype,
     ) !Node {
         return Node{ .until = try allocate(allocator, cond, body) };
     }
@@ -1699,17 +1699,24 @@ pub const LibDef = struct {
 
     name: []const u8,
     body: Node,
-    visibility: Visibility = .public,
+    name_location: ?Location,
+    visibility: Visibility,
 
     pub fn allocate(
         allocator: Allocator,
         name: []const u8,
-        body: ?Node,
+        body: anytype,
+        options: struct {
+            name_location: ?Location = null,
+            visibility: Visibility = .public,
+        },
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .body = try Expressions.from(allocator, body),
+            .name_location = options.name_location,
+            .visibility = options.visibility,
         };
         return instance;
     }
@@ -1717,9 +1724,10 @@ pub const LibDef = struct {
     pub fn node(
         allocator: Allocator,
         name: []const u8,
-        body: ?Node,
+        body: anytype,
+        options: anytype,
     ) !Node {
-        return Node{ .lib_def = try allocate(allocator, name, body) };
+        return Node{ .lib_def = try allocate(allocator, name, body, options) };
     }
 };
 
@@ -1750,17 +1758,19 @@ pub const CStructOrUnionDef = struct {
 
     name: []const u8,
     body: Node,
-    is_union: bool = false,
+    is_union: bool,
 
     pub fn allocate(
         allocator: Allocator,
         name: []const u8,
-        body: ?Node,
+        body: anytype,
+        options: struct { is_union: bool = false },
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .body = try Expressions.from(allocator, body),
+            .is_union = options.is_union,
         };
         return instance;
     }
@@ -1768,9 +1778,10 @@ pub const CStructOrUnionDef = struct {
     pub fn node(
         allocator: Allocator,
         name: []const u8,
-        body: ?Node,
+        body: anytype,
+        options: anytype,
     ) !Node {
-        return Node{ .c_struct_or_union_def = try allocate(allocator, name, body) };
+        return Node{ .c_struct_or_union_def = try allocate(allocator, name, body, options) };
     }
 };
 
@@ -1900,8 +1911,8 @@ pub const MacroIf = struct {
     pub fn allocate(
         allocator: Allocator,
         cond: Node,
-        then: ?Node,
-        @"else": ?Node,
+        then: anytype,
+        @"else": anytype,
     ) !*@This() {
         var instance = try allocator.create(@This());
         instance.* = .{
@@ -1915,8 +1926,8 @@ pub const MacroIf = struct {
     pub fn node(
         allocator: Allocator,
         cond: Node,
-        then: ?Node,
-        @"else": ?Node,
+        then: anytype,
+        @"else": anytype,
     ) !Node {
         return Node{ .macro_if = try allocate(allocator, cond, then, @"else") };
     }
@@ -2099,8 +2110,8 @@ pub fn main() !void {
     p("{}\n", .{try Until.node(allocator, try BoolLiteral.node(allocator, true), null)});
     p("{}\n", .{try Rescue.node(allocator, null)});
     p("{}\n", .{try ExceptionHandler.node(allocator, null)});
-    p("{}\n", .{try LibDef.node(allocator, "Foo", null)});
-    p("{}\n", .{try CStructOrUnionDef.node(allocator, "Foo", null)});
+    p("{}\n", .{try LibDef.node(allocator, "Foo", null, .{})});
+    p("{}\n", .{try CStructOrUnionDef.node(allocator, "Foo", null, .{})});
     p("{}\n", .{try MacroIf.node(allocator, try BoolLiteral.node(allocator, true), null, null)});
     p("{}\n", .{(try Nop.node(allocator)).isNop()});
     p("{}\n", .{(try BoolLiteral.node(allocator, true)).isTrueLiteral()});

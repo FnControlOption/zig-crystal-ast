@@ -195,7 +195,7 @@ pub fn parseExpressionsInternal(parser: *Parser) !Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
-    if (parser.isEndToken()) {
+    if (parser.atEndToken()) {
         return Nop.node(allocator);
     }
 
@@ -204,7 +204,7 @@ pub fn parseExpressionsInternal(parser: *Parser) !Node {
     lexer.slash_is_regex = true;
     try lexer.skipStatementEnd();
 
-    if (parser.isEndToken()) {
+    if (parser.atEndToken()) {
         return exp;
     }
 
@@ -214,7 +214,7 @@ pub fn parseExpressionsInternal(parser: *Parser) !Node {
     while (true) {
         try exps.append(try parser.parseMultiAssign());
         try lexer.skipStatementEnd();
-        if (parser.isEndToken()) break;
+        if (parser.atEndToken()) break;
     }
 
     return Expressions.from(allocator, exps);
@@ -970,6 +970,13 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                             };
                         },
                         // TODO
+                        .lib => {
+                            return try parser.checkTypeDeclaration() orelse {
+                                try parser.checkNotInsideDef("can't define lib");
+                                return parser.parseLib();
+                            };
+                        },
+                        // TODO
                         .typeof => {
                             return try parser.checkTypeDeclaration() orelse {
                                 return try parser.parseTypeof();
@@ -1083,7 +1090,25 @@ pub fn newNodeCheckTypeDeclaration(
 
 // parseGenericOrCustomLiteral
 // parseCustomLiteral
-// checkNotInsideDef
+
+pub fn checkNotInsideDef(
+    parser: *Parser,
+    comptime message: []const u8,
+) !void {
+    const lexer = &parser.lexer;
+
+    if (parser.def_nest == 0 and parser.fun_nest == 0) return;
+
+    const suffix = if (parser.def_nest > 0)
+        " inside def"
+    else
+        " inside fun";
+    return lexer.raiseAt(
+        message ++ suffix,
+        lexer.token.line_number,
+        lexer.token.column_number,
+    );
+}
 
 pub fn insideDef(parser: *const Parser) bool {
     return parser.def_nest > 0;
@@ -2547,11 +2572,89 @@ pub fn parseTypeof(parser: *Parser) !Node {
 // parseReturn
 // parseNext
 // parseControlExpression
-// parseLib
+
+pub fn parseLib(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    const name = try parser.checkConst();
+    const name_location = lexer.token.location();
+    try lexer.skipTokenAndStatementEnd();
+
+    const body = blk: {
+        const old_visibility = parser.resetVisibility();
+        defer parser.visibility = old_visibility;
+        break :blk try parser.parseLibBodyExpressions();
+    };
+
+    try parser.checkIdentKeyword(.end);
+    const end_location = lexer.tokenEndLocation();
+    try lexer.skipTokenAndSpace();
+
+    const lib_def = try LibDef.node(
+        allocator,
+        name,
+        body,
+        .{ .name_location = name_location },
+    );
+    lib_def.setLocation(location);
+    lib_def.setEndLocation(end_location);
+    return lib_def;
+}
+
 // parseLibBody
-// fn parseLibBodyExpressions
-// parseLibBodyExp
-// parseLibBodyExpWithoutLocation
+
+fn parseLibBodyExpressions(parser: *Parser) !ArrayList(Node) {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+    var expressions = ArrayList(Node).init(allocator);
+    while (true) {
+        try lexer.skipStatementEnd();
+        if (parser.atEndToken()) break;
+        try expressions.append(try parser.parseLibBodyExp());
+    }
+    return expressions;
+}
+
+pub fn parseLibBodyExp(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const location = lexer.token.location();
+    const node = try parser.parseLibBodyExpWithoutLocation();
+    node.setLocation(location);
+    return node;
+}
+
+pub fn parseLibBodyExpWithoutLocation(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    switch (lexer.token.type) {
+        // TODO
+        .ident => {
+            // TODO
+            if (lexer.token.value.isKeyword(.@"struct")) {
+                parser.inside_c_struct = true;
+                defer parser.inside_c_struct = false;
+                return parser.parseCStructOrUnion(.{
+                    .is_union = false,
+                });
+            } else if (lexer.token.value.isKeyword(.@"union")) {
+                return parser.parseCStructOrUnion(.{
+                    .is_union = true,
+                });
+            } // TODO
+            else {
+                return parser.unexpectedToken(.{});
+            }
+        },
+        // TODO
+        else => {
+            return parser.unexpectedToken(.{});
+        },
+    }
+}
+
 // parseFunDef
 // parseAlias
 // parsePointerof
@@ -2666,9 +2769,77 @@ pub fn parseOffsetof(parser: *Parser) !Node {
 //     const type = parser.parseBareProcType();
 // }
 
-// parseCStructOrUnion
+pub fn parseCStructOrUnion(
+    parser: *Parser,
+    options: struct { is_union: bool },
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    try lexer.skipTokenAndSpaceOrNewline();
+    const name = try parser.checkConst();
+    try lexer.skipTokenAndStatementEnd();
+    const body = try parser.parseCStructOrUnionBodyExpressions();
+    try parser.checkIdentKeyword(.end);
+    const end_location = lexer.tokenEndLocation();
+    try lexer.skipTokenAndSpace();
+
+    const node = try CStructOrUnionDef.node(
+        allocator,
+        name,
+        try Expressions.from(allocator, body),
+        .{ .is_union = options.is_union },
+    );
+    node.setLocation(location);
+    node.setEndLocation(end_location);
+    return node;
+}
+
 // parseCStructOrUnionBody
-// fn parseCStructOrUnionBodyExpressions
+
+fn parseCStructOrUnionBodyExpressions(
+    parser: *Parser,
+) !ArrayList(Node) {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    var exps = ArrayList(Node).init(allocator);
+
+    while (true) {
+        switch (lexer.token.type) {
+            .ident => {
+                if (lexer.token.value.isKeyword(.include)) {
+                    // TODO: implement
+                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                } else if (lexer.token.value.isKeyword(.@"else")) {
+                    break;
+                } else if (lexer.token.value.isKeyword(.end)) {
+                    break;
+                } else {
+                    // TODO: implement
+                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                }
+            },
+            .op_lcurly_lcurly => {
+                // TODO: implement
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
+            },
+            .op_lcurly_percent => {
+                // TODO: implement
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
+            },
+            .newline, .op_semicolon => {
+                try lexer.skipStatementEnd();
+            },
+            else => {
+                break;
+            },
+        }
+    }
+
+    return exps;
+}
 
 // pub fn parseCStructOrUnionFields(
 //     parser: *Parser,
@@ -2720,7 +2891,7 @@ pub fn skipNodeToken(parser: *Parser, node: Node) !void {
     try lexer.skipToken();
 }
 
-pub fn isEndToken(parser: *Parser) bool {
+pub fn atEndToken(parser: *Parser) bool {
     const lexer = &parser.lexer;
     switch (lexer.token.type) {
         .op_rcurly, .op_rsquare, .op_percent_rcurly, .eof => {
@@ -3009,14 +3180,10 @@ pub fn isVar(parser: *const Parser, name: []const u8) bool {
     return std.mem.eql(u8, name, "self") or parser.isVarInScope(name);
 }
 
-pub fn pushVisibility(parser: *Parser, new_value: ?Visibiity) ?Visibiity {
+pub fn resetVisibility(parser: *Parser) ?Visibiity {
     const old_visibility = parser.visibility;
-    parser.visibility = new_value;
+    parser.visibility = null;
     return old_visibility;
-}
-
-pub fn resetVisibility(parser: *Parser, old_value: ?Visibiity) void {
-    parser.visibility = old_value;
 }
 
 // nextToken
@@ -3209,10 +3376,9 @@ fn _main() !void {
 
     parser = try Parser.new("foo");
     assert(parser.visibility == null);
-    var old_visibility = parser.pushVisibility(.public);
-    assert(old_visibility == null);
-    assert(parser.visibility.? == .public);
-    parser.resetVisibility(old_visibility);
+    parser.visibility = .public;
+    var old_visibility = parser.resetVisibility();
+    assert(old_visibility.? == .public);
     assert(parser.visibility == null);
 
     parser = try Parser.new("::Foo::Bar::Baz");
@@ -3554,6 +3720,18 @@ fn _main() !void {
     try lexer.skipToken();
     node = try parser.parseTypeArg();
     assert(node == .offset_of);
+
+    // parseCStructOrUnionBodyExpressions
+    parser = try Parser.new(
+        \\lib Foo
+        \\  struct Fizz; end
+        \\  union Buzz
+        \\  end
+        \\end
+    );
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .lib_def);
 
     // p("{}\n", .{});
 
