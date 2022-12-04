@@ -1042,7 +1042,12 @@ pub fn parseTypeDeclaration(parser: *Parser, v: Node) !Node {
         try lexer.skipTokenAndSpaceOrNewline();
         value = try parser.parseOpAssignNoControl(.{});
     }
-    const node = try TypeDeclaration.node(allocator, v, var_type, value);
+    const node = try TypeDeclaration.node(
+        allocator,
+        v,
+        var_type,
+        .{ .value = value },
+    );
     node.copyLocation(v);
     return node;
 }
@@ -2810,15 +2815,18 @@ fn parseCStructOrUnionBodyExpressions(
         switch (lexer.token.type) {
             .ident => {
                 if (lexer.token.value.isKeyword(.include)) {
-                    // TODO: implement
-                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                    if (parser.inside_c_struct) {
+                        // TODO: implement
+                        return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                    } else {
+                        try parser.parseCStructOrUnionFields(&exps);
+                    }
                 } else if (lexer.token.value.isKeyword(.@"else")) {
                     break;
                 } else if (lexer.token.value.isKeyword(.end)) {
                     break;
                 } else {
-                    // TODO: implement
-                    return parser.unexpectedToken(.{ .msg = "unimplemented" });
+                    try parser.parseCStructOrUnionFields(&exps);
                 }
             },
             .op_lcurly_lcurly => {
@@ -2841,45 +2849,58 @@ fn parseCStructOrUnionBodyExpressions(
     return exps;
 }
 
-// pub fn parseCStructOrUnionFields(
-//     parser: *Parser,
-//     exps: ArrayList(Node),
-// ) void {
-//     const lexer = &parser.lexer;
-//     const allocator = lexer.allocator;
-//
-//     var vars = ArrayList(Node).init(allocator);
-//
-//     const first = try Var.node(allocator, lexer.token.nameToString());
-//     first.setLocation(lexer.token.location());
-//     try vars.append(first);
-//
-//     try lexer.skipTokenAndSpaceOrNewline();
-//
-//     while (lexer.token.type == .op_comma) {
-//         try lexer.skipTokenAndSpaceOrNewline(); // TODO: redundant?
-//
-//         const v = try Var.node(allocator, try parser.checkIdent());
-//         v.setLocation(lexer.token.location());
-//         try vars.append(v);
-//
-//         try lexer.skipTokenAndSpaceOrNewline();
-//     }
-//
-//     try parser.check(.op_colon);
-//     try lexer.skipTokenAndSpaceOrNewline();
-//
-//     const t = parser.parseBareProcType();
-//
-//     try lexer.skipStatementEnd();
-//
-//     for (vars) |v| {
-//         var node = try TypeDeclaration.node(allocator, v, t);
-//         node.copyLocation(v);
-//         node.copyEndLocation(t);
-//         try exps.append(node);
-//     }
-// }
+pub fn parseCStructOrUnionFields(
+    parser: *Parser,
+    exps: *ArrayList(Node),
+) !void {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    var vars = ArrayList(Node).init(allocator);
+    defer vars.deinit();
+    try vars.append(blk: {
+        const v = try Var.node(
+            allocator,
+            lexer.token.nameToString(),
+        );
+        v.setLocation(lexer.token.location());
+        break :blk v;
+    });
+
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    while (lexer.token.type == .op_comma) {
+        try lexer.skipTokenAndSpaceOrNewline(); // TODO: redundant?
+
+        const v = try Var.node(
+            allocator,
+            try parser.checkIdent(),
+        );
+        v.setLocation(lexer.token.location());
+        try vars.append(v);
+
+        try lexer.skipTokenAndSpaceOrNewline();
+    }
+
+    try parser.check(.op_colon);
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    const var_type = try parser.parseBareProcType();
+
+    try lexer.skipStatementEnd();
+
+    for (vars.items) |v| {
+        const node = try TypeDeclaration.node(
+            allocator,
+            v,
+            var_type,
+            .{},
+        );
+        node.copyLocation(v);
+        node.copyEndLocation(var_type); // TODO: inaccurate
+        try exps.append(node);
+    }
+}
 
 // parseEnumDef
 // parseEnumBody
@@ -3722,10 +3743,13 @@ fn _main() !void {
     assert(node == .offset_of);
 
     // parseCStructOrUnionBodyExpressions
+    //  + parseCStructOrUnionFields
     parser = try Parser.new(
         \\lib Foo
         \\  struct Fizz; end
         \\  union Buzz
+        \\    a : Int32
+        \\    b : Float32
         \\  end
         \\end
     );
