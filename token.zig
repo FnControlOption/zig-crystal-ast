@@ -461,6 +461,13 @@ pub const DelimiterState = struct {
     // }
 };
 
+pub fn doc(token: *const Token) ?[]const u8 {
+    return if (token.doc_buffer) |doc_buffer|
+        doc_buffer.items
+    else
+        null;
+}
+
 pub fn location(token: *Token) Location {
     if (token._location) |loc| {
         return loc;
@@ -470,15 +477,23 @@ pub fn location(token: *Token) Location {
     return loc;
 }
 
-pub fn isAnyKeyword(token: Token) bool {
+pub fn isAnyKeyword(token: *const Token) bool {
     return token.type == .ident and token.value.isAnyKeyword();
 }
 
-pub fn isKeyword(token: Token, keyword: Keyword) bool {
+pub fn isKeyword(token: *const Token, keyword: Keyword) bool {
     return token.type == .ident and token.value.isKeyword(keyword);
 }
 
-pub fn toString(token: Token, writer: anytype) !void {
+pub fn nameToString(token: *const Token) []const u8 {
+    return switch (token.value) {
+        .keyword => |keyword| keyword.toString(),
+        .string => |string| string,
+        else => unreachable,
+    };
+}
+
+pub fn toString(token: *const Token, writer: anytype) !void {
     return switch (token.value) {
         .char => |char| writer.writeByte(char),
         // .utf8 => |encoded| writer.writeAll(encoded),
@@ -488,7 +503,7 @@ pub fn toString(token: Token, writer: anytype) !void {
     };
 }
 
-pub fn format(token: Token, comptime fmt: []const u8, opt: FormatOptions, writer: anytype) !void {
+pub fn format(token: *const Token, comptime fmt: []const u8, opt: FormatOptions, writer: anytype) !void {
     _ = fmt;
     _ = opt;
     return token.toString(writer);

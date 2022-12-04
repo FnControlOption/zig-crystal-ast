@@ -149,7 +149,7 @@ no_type_declaration: usize = 0,
 inside_interpolation: bool = false,
 
 stop_on_do: bool = false,
-assigned_vars: ArrayList([]const u8),
+assigned_vars: StringHashMap(void),
 
 fn new(string: []const u8) !Parser {
     const allocator = std.heap.page_allocator; // TODO: use ArenaAllocator
@@ -162,7 +162,7 @@ pub fn init(allocator: Allocator, string: []const u8) !Parser {
         .var_scopes = ArrayList(StringHashMap(void)).init(allocator),
         .unclosed_stack = ArrayList(Unclosed).init(allocator),
         .call_args_start_locations = ArrayList(Location).init(allocator),
-        .assigned_vars = ArrayList([]const u8).init(allocator),
+        .assigned_vars = StringHashMap(void).init(allocator),
     };
     try parser.pushIsolatedVarScope();
     return parser;
@@ -181,7 +181,7 @@ pub fn parse(parser: *Parser) !Node {
 
 pub fn parseExpressions(parser: *Parser) !Node {
     const old_stop_on_do = parser.replaceStopOnDo(false);
-    defer _ = parser.replaceStopOnDo(old_stop_on_do);
+    defer parser.stop_on_do = old_stop_on_do;
     return parser.parseExpressionsInternal();
 }
 
@@ -822,12 +822,19 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                             };
                         },
                         // TODO
-                        else => {},
+                        else => {
+                            const node = try parser.parseVarOrCall(.{});
+                            parser.setVisibility(node);
+                            return node;
+                        },
                     }
                 },
-                else => {},
+                else => {
+                    const node = try parser.parseVarOrCall(.{});
+                    parser.setVisibility(node);
+                    return node;
+                },
             }
-            return parser.unexpectedTokenInAtomic(); // TODO
         },
         // TODO
         .underscore => {
@@ -846,7 +853,7 @@ pub fn checkTypeDeclaration(parser: *Parser) !?Node {
     const allocator = lexer.allocator;
 
     if (parser.nextComesColonSpace()) {
-        const name = identToString(lexer.token);
+        const name = lexer.token.nameToString();
         const v = try Var.node(allocator, name);
         v.setLocation(lexer.token.location());
         try lexer.skipTokenAndSpace();
@@ -1137,7 +1144,7 @@ pub fn consumeDelimiter(
                 parser.inside_interpolation = true;
                 const exp = blk: {
                     const old_stop_on_do = parser.replaceStopOnDo(false);
-                    defer _ = parser.replaceStopOnDo(old_stop_on_do);
+                    defer parser.stop_on_do = old_stop_on_do;
                     break :blk try parser.parseExpression();
                 };
 
@@ -1552,8 +1559,221 @@ pub fn setVisibility(parser: *const Parser, node: Node) void {
     _ = node;
 }
 
-// parseVarOrCall
-// nextComesPlusOrMinus
+pub fn parseVarOrCall(
+    parser: *Parser,
+    options: struct {
+        is_global: bool = false,
+        force_call: bool = false,
+    },
+) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    var end_location = lexer.tokenEndLocation();
+    const doc = lexer.token.doc();
+
+    if (lexer.token.type == .op_bang) {
+        const obj = try Var.node(allocator, "self");
+        obj.setLocation(location);
+        // TODO: implement
+        return parser.unexpectedTokenMsg("unimplemented");
+        // return parser.parseNegationSuffix(obj);
+    }
+
+    if (lexer.token.value == .keyword) {
+        switch (lexer.token.value.keyword) {
+            .is_a_question => {
+                // TODO: implement
+                return parser.unexpectedTokenMsg("unimplemented");
+            },
+            .as => {
+                // TODO: implement
+                return parser.unexpectedTokenMsg("unimplemented");
+            },
+            .as_question => {
+                // TODO: implement
+                return parser.unexpectedTokenMsg("unimplemented");
+            },
+            .responds_to_question => {
+                // TODO: implement
+                return parser.unexpectedTokenMsg("unimplemented");
+            },
+            .nil_question => {
+                // TODO: implement
+                return parser.unexpectedTokenMsg("unimplemented");
+            },
+            else => {
+                // Not a special call, go on
+            },
+        }
+    }
+
+    const is_global = options.is_global;
+    var force_call = options.force_call;
+
+    const name_location = lexer.token.location();
+    const name = if (force_call and lexer.token.value == .none)
+        lexer.token.type.toString()
+    else
+        lexer.token.nameToString();
+
+    const is_var = parser.isVar(name);
+
+    // If the name is a var and '+' or '-' follow, never treat the name as a call
+    if (is_var and parser.nextComesPlusOrMinus()) {
+        const v = try Var.node(allocator, name);
+        // TODO: add Var#doc property
+        _ = doc;
+        v.setLocation(name_location);
+        v.setEndLocation(end_location);
+        try lexer.skipToken();
+        return v;
+    }
+
+    lexer.wants_regex = false;
+    try lexer.skipToken();
+
+    if (lexer.token.type == .space) {
+        lexer.wants_regex = !is_var;
+    }
+
+    if (std.mem.eql(u8, "super", name)) {
+        parser.calls_super = true;
+    } else if (std.mem.eql(u8, "initialize", name)) {
+        parser.calls_initialize = true;
+    } else if (std.mem.eql(u8, "previous_def", name)) {
+        parser.calls_previous_def = true;
+    } else {
+        // Not a special call
+    }
+
+    const call_args = blk: {
+        const old_stop_on_do = parser.stop_on_do;
+        defer parser.stop_on_do = old_stop_on_do;
+        break :blk parser.parseCallArgs(.{
+            .stop_on_do_after_space = parser.stop_on_do,
+        });
+    };
+
+    var args: ?ArrayList(Node) = null;
+    var block: ?*Block = null;
+    var block_arg: ?Node = null;
+    var named_args: ?ArrayList(*NamedArgument) = null;
+    var stopped_on_do_after_space = false;
+    var has_parentheses = false;
+
+    if (call_args) |c| {
+        args = c.args;
+        block = c.block;
+        block_arg = c.block_arg;
+        named_args = c.named_args;
+        stopped_on_do_after_space = c.stopped_on_do_after_space;
+        has_parentheses = c.has_parentheses;
+        if (!force_call) {
+            force_call = has_parentheses;
+        }
+        if (!force_call) {
+            if (args) |a|
+                force_call = a.items.len > 0;
+        }
+        if (!force_call) {
+            if (named_args) |n|
+                force_call = n.items.len > 0;
+        }
+    }
+
+    if (stopped_on_do_after_space) {
+        block = try parser.parseCurlyBlock(block);
+    } else if (parser.stop_on_do and has_parentheses) {
+        block = try parser.parseCurlyBlock(block);
+    } else {
+        block = try parser.parseBlock(block, .{});
+    }
+
+    if (block != null and block_arg != null) {
+        return lexer.raiseLoc(
+            "can't use captured and non-captured blocks together",
+            location,
+        );
+    }
+
+    const node = blk: {
+        if (block != null or block_arg != null or is_global) {
+            // TODO: implement
+            return parser.unexpectedTokenMsg("unimplemented");
+        } else {
+            if (args) |a| {
+                // TODO: implement
+                _ = a;
+                return parser.unexpectedTokenMsg("unimplemented");
+            } else {
+                if (parser.no_type_declaration == 0 and
+                    lexer.token.type == .op_colon)
+                {
+                    // TODO: implement
+                    return parser.unexpectedTokenMsg("unimplemented");
+                } else if (!force_call and is_var) {
+                    // TODO: implement
+                    return parser.unexpectedTokenMsg("unimplemented");
+                } else {
+                    if (!force_call and
+                        named_args == null and
+                        !is_global and
+                        parser.assigned_vars.contains(name))
+                    {
+                        return lexer.raiseLoc(
+                            try std.fmt.allocPrint(
+                                allocator,
+                                "can't use variable name '{0s}' inside assignment to variable '{0s}'",
+                                .{name},
+                            ),
+                            location,
+                        );
+                    }
+
+                    break :blk try Call.node(
+                        allocator,
+                        null,
+                        name,
+                        ArrayList(Node).init(allocator),
+                        .{
+                            .named_args = named_args,
+                            .is_global = is_global,
+                            .name_location = name_location,
+                            .has_parentheses = has_parentheses,
+                        },
+                    );
+                }
+            }
+        }
+    };
+
+    // TODO: node.setDoc(doc);
+    node.setLocation(location);
+    if (block != null and block.?.end_location != null) {
+        end_location = block.?.end_location.?;
+    } else if (call_args != null and call_args.?.end_location != null) {
+        end_location = call_args.?.end_location.?;
+    }
+    node.setEndLocation(end_location);
+    return node;
+}
+
+pub fn nextComesPlusOrMinus(parser: *Parser) bool {
+    const lexer = &parser.lexer;
+
+    const pos = lexer.current_pos;
+    defer lexer.current_pos = pos;
+
+    while (std.ascii.isWhitespace(lexer.currentChar())) {
+        lexer.skipChar(.{ .column_increment = false });
+    }
+    return switch (lexer.currentChar()) {
+        '+', '-' => true,
+        else => false,
+    };
+}
 
 pub fn replaceStopOnDo(parser: *Parser, new_value: bool) bool {
     const old_stop_on_do = parser.stop_on_do;
@@ -1561,10 +1781,68 @@ pub fn replaceStopOnDo(parser: *Parser, new_value: bool) bool {
     return old_stop_on_do;
 }
 
-// parseBlock
-// parseCurlyBlock
+pub fn parseBlock(
+    parser: *Parser,
+    block: ?*Block,
+    options: struct { stop_on_do: bool = false },
+) !?*Block {
+    // TODO: implement
+    _ = options;
+    return parser.parseCurlyBlock(block);
+}
+
+pub fn parseCurlyBlock(parser: *Parser, block: ?*Block) !?*Block {
+    // TODO: implement
+    _ = parser;
+    return block;
+}
+
 // parseBlock2
-// parseCallArgs
+
+const CallArgs = struct {
+    args: ?ArrayList(Node),
+    block: ?*Block,
+    block_arg: ?Node,
+    named_args: ?ArrayList(*NamedArgument),
+    stopped_on_do_after_space: bool,
+    end_location: ?Location,
+    has_parentheses: bool,
+
+    fn init(
+        args: ?ArrayList(Node),
+        block: ?*Block,
+        block_arg: ?Node,
+        named_args: ?ArrayList(*NamedArgument),
+        stopped_on_do_after_space: bool,
+        end_location: ?Location,
+        has_parentheses: bool,
+    ) CallArgs {
+        return .{
+            .args = args,
+            .block = block,
+            .block_arg = block_arg,
+            .named_args = named_args,
+            .stopped_on_do_after_space = stopped_on_do_after_space,
+            .end_location = end_location,
+            .has_parentheses = has_parentheses,
+        };
+    }
+};
+
+pub fn parseCallArgs(
+    parser: *Parser,
+    options: struct {
+        stop_on_do_after_space: bool = false,
+        allow_curly: bool = false,
+        control: bool = false,
+    },
+) ?CallArgs {
+    // TODO: implement
+    _ = parser;
+    _ = options;
+    return null;
+}
+
 // parseCallArgsSpaceConsumed
 // parseCallArgsNamedArgs
 // parseNamedArgs
@@ -2086,7 +2364,7 @@ pub fn parseTypeof(parser: *Parser) !Node {
 //
 //     var vars = ArrayList(Node).init(allocator);
 //
-//     const first = try Var.node(allocator, identToString(lexer.token));
+//     const first = try Var.node(allocator, lexer.token.nameToString());
 //     first.setLocation(lexer.token.location());
 //     try vars.append(first);
 //
@@ -2188,7 +2466,7 @@ pub fn consumeDefOrMacroName(parser: *Parser) ![]const u8 {
     try parser.checkAny(DefOrMacroCheck1);
     lexer.wants_def_or_macro_name = false;
     return switch (lexer.token.type) {
-        .ident, .@"const" => identToString(lexer.token),
+        .ident, .@"const" => lexer.token.nameToString(),
         else => |token_type| token_type.toString(),
     };
 }
@@ -2355,15 +2633,7 @@ pub fn checkIdentKeyword(parser: *Parser, value: Keyword) !void {
 pub fn checkIdent(parser: *Parser) ![]const u8 {
     const lexer = &parser.lexer;
     try parser.check(.ident);
-    return identToString(lexer.token);
-}
-
-fn identToString(token: Token) []const u8 {
-    return switch (token.value) {
-        .keyword => |keyword| keyword.toString(),
-        .string => |string| string,
-        else => unreachable,
-    };
+    return lexer.token.nameToString();
 }
 
 pub fn checkConst(parser: *Parser) ![]const u8 {
@@ -2942,24 +3212,16 @@ fn _main() !void {
     node = node.type_of.expressions.items[0];
     assert(node == .number_literal);
 
+    // parseVarOrCall
+    parser = try Parser.new("foo");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .call);
+
     // p("{}\n", .{});
 
     const stdout = std.io.getStdOut().writer();
     try stdout.print("Success\n", .{});
-
-    // parser = Parser.new("");
-    // var node = try parser.parse();
-    // p("{}\n", .{node});
-    // assert(node == .nop);
-    // parser = Parser.new("\n; foo");
-    // if (parser.parse()) |_| unreachable else |err| p("{} {?s}\n", .{err, parser.lexer.error_message});
-    // parser = Parser.new("+=");
-    // parser.stop_on_do = true;
-    // if (parser.parse()) |_| unreachable else |err| p("{} {?s}\n", .{err, parser.lexer.error_message});
-    // assert(parser.stop_on_do);
-    // try parser.parse();
-    // p("{}\n", .{parser.lexer.token.type});
-    // assert(parser.lexer.token.type == .ident);
 }
 };
 pub fn main() !void {
