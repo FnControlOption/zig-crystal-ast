@@ -478,7 +478,7 @@ pub fn parseOpAssign(
                         },
                         else => {
                             needs_new_scope = false;
-                        }
+                        },
                     }
 
                     const atomic_value = blk: {
@@ -2131,6 +2131,9 @@ pub fn parseAtomicType(parser: *Parser) !Node {
             node.setLocation(location);
             return node;
         },
+        .@"const", .op_colon_colon => {
+            return parser.parseGeneric(.{});
+        },
         // TODO
         else => {
             return parser.unexpectedToken(.{});
@@ -2139,8 +2142,42 @@ pub fn parseAtomicType(parser: *Parser) !Node {
 }
 
 // parseUnionTypes
-// parseGeneric
-// parseGeneric
+
+pub fn parseGeneric(
+    parser: *Parser,
+    options: struct { is_expression: bool = false },
+) !Node {
+    const lexer = &parser.lexer;
+    const location = lexer.token.location();
+
+    var is_global = false;
+    if (lexer.token.type == .op_colon_colon) {
+        try lexer.skipTokenAndSpaceOrNewline();
+        is_global = true;
+    }
+
+    return parser.parseGeneric2(.{
+        .is_global = is_global,
+        .location = location,
+        .is_expression = options.is_expression,
+    });
+}
+
+pub fn parseGeneric2(
+    parser: *Parser,
+    options: struct {
+        is_global: bool,
+        location: Location,
+        is_expression: bool,
+    },
+) !Node {
+    const path = try parser.parsePath2(
+        options.is_global,
+        options.location,
+    );
+    // TODO: implement
+    return path;
+}
 
 pub fn parsePath(parser: *Parser) !Node {
     const lexer = &parser.lexer;
@@ -2230,16 +2267,15 @@ pub fn parseTypeArg(parser: *Parser) Error!Node {
         return num;
     }
 
-    // TODO
-    // switch (lexer.token.value) {
-    //     .keyword => |keyword| {
-    //         switch (keyword) {
-    //             else => {},
-    //         }
-    //     },
-    //     else => {},
-    // }
-    return parser.parseUnionType();
+    if (lexer.token.isKeyword(.sizeof)) {
+        return parser.parseSizeof();
+    } else if (lexer.token.isKeyword(.instance_sizeof)) {
+        return parser.parseInstanceSizeof();
+    } else if (lexer.token.isKeyword(.offsetof)) {
+        return parser.parseOffsetof();
+    } else {
+        return parser.parseUnionType();
+    }
 }
 
 pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
@@ -2519,10 +2555,105 @@ pub fn parseTypeof(parser: *Parser) !Node {
 // parseFunDef
 // parseAlias
 // parsePointerof
-// parseSizeof
-// parseInstanceSizeof
-// parseSizeof
-// parseOffsetof
+
+pub fn parseSizeof(parser: *Parser) !Node {
+    return parser.parseSizeof2(SizeOf);
+}
+
+pub fn parseInstanceSizeof(parser: *Parser) !Node {
+    return parser.parseSizeof2(InstanceSizeOf);
+}
+
+pub fn parseSizeof2(parser: *Parser, comptime Exp: type) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    try lexer.skipTokenAndSpace();
+
+    try parser.check(.op_lparen);
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    const type_location = lexer.token.location();
+    const t = try parser.parseBareProcType();
+    t.setLocation(type_location);
+
+    try lexer.skipSpaceOrNewline();
+
+    const end_location = lexer.tokenEndLocation();
+    try parser.check(.op_rparen);
+    try lexer.skipTokenAndSpace();
+
+    const node = try Exp.node(allocator, t);
+    node.setLocation(location);
+    node.setEndLocation(end_location);
+    return node;
+}
+
+pub fn parseOffsetof(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    try lexer.skipTokenAndSpace();
+    try parser.check(.op_lparen);
+
+    try lexer.skipTokenAndSpaceOrNewline();
+    const type_location = lexer.token.location();
+    const t = try parser.parseBareProcType();
+    t.setLocation(type_location);
+
+    try lexer.skipSpace();
+    try parser.check(.op_comma);
+
+    try lexer.skipTokenAndSpaceOrNewline();
+    const offset = switch (lexer.token.type) {
+        .instance_var => blk: {
+            break :blk try InstanceVar.node(
+                allocator,
+                lexer.token.value.string,
+            );
+        },
+        .number => blk: {
+            if (lexer.token.number_kind != .i32)
+                return lexer.raiseFor(
+                    try std.fmt.allocPrint(
+                        allocator,
+                        "expecting an integer offset, not '{}'",
+                        .{lexer.token},
+                    ),
+                    lexer.token,
+                );
+            break :blk try NumberLiteral.node(
+                allocator,
+                lexer.token.value.string,
+                lexer.token.number_kind,
+            );
+        },
+        else => {
+            return lexer.raiseFor(
+                try std.fmt.allocPrint(
+                    allocator,
+                    "expecting an instance variable or a integer offset, not '{}'",
+                    .{lexer.token},
+                ),
+                lexer.token,
+            );
+        },
+    };
+    offset.setLocation(lexer.token.location());
+
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    const end_location = lexer.tokenEndLocation();
+    try parser.check(.op_rparen);
+    try lexer.skipTokenAndSpace();
+
+    const node = try OffsetOf.node(allocator, t, offset);
+    node.setLocation(location);
+    node.setEndLocation(end_location);
+    return node;
+}
 
 // pub fn parseTypeDef(parser: *Parser) Node {
 //     const lexer = &parser.lexer;
@@ -3416,6 +3547,13 @@ fn _main() !void {
     lexer = &parser.lexer;
     node = try parser.parse();
     assert(node == .assign);
+
+    // parseOffsetof
+    parser = try Parser.new("offsetof(Foo, @bar)");
+    lexer = &parser.lexer;
+    try lexer.skipToken();
+    node = try parser.parseTypeArg();
+    assert(node == .offset_of);
 
     // p("{}\n", .{});
 

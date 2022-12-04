@@ -2334,17 +2334,17 @@ pub inline fn skipToken(lexer: *Lexer) !void {
     _ = try lexer.nextToken();
 }
 
-pub fn skipTokenAndSpace(lexer: *Lexer) !void {
+pub inline fn skipTokenAndSpace(lexer: *Lexer) !void {
     try lexer.skipToken();
     try lexer.skipSpace();
 }
 
-pub fn skipTokenAndSpaceOrNewline(lexer: *Lexer) !void {
+pub inline fn skipTokenAndSpaceOrNewline(lexer: *Lexer) !void {
     try lexer.skipToken();
     try lexer.skipSpaceOrNewline();
 }
 
-pub fn skipTokenAndStatementEnd(lexer: *Lexer) !void {
+pub inline fn skipTokenAndStatementEnd(lexer: *Lexer) !void {
     try lexer.skipToken();
     try lexer.skipStatementEnd();
 }

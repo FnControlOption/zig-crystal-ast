@@ -1196,6 +1196,27 @@ pub const OffsetOf = struct {
 
     offsetof_type: Node,
     offset: Node,
+
+    pub fn allocate(
+        allocator: Allocator,
+        offsetof_type: Node,
+        offset: Node,
+    ) !*@This() {
+        var instance = try allocator.create(@This());
+        instance.* = .{
+            .offsetof_type = offsetof_type,
+            .offset = offset,
+        };
+        return instance;
+    }
+
+    pub fn node(
+        allocator: Allocator,
+        offsetof_type: Node,
+        offset: Node,
+    ) !Node {
+        return Node{ .offset_of = try allocate(allocator, offsetof_type, offset) };
+    }
 };
 
 pub const VisibilityModifier = struct {
