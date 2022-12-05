@@ -1170,8 +1170,7 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             }
         },
         .@"const" => {
-            // TODO: implement parseGenericOrCustomLiteral
-            return parser.unexpectedToken(.{ .msg = "unexpected" });
+            return parser.parseGenericOrCustomLiteral();
         },
         .instance_var => {
             // TODO: implement
@@ -1275,7 +1274,11 @@ pub fn newNodeCheckTypeDeclaration(
     }
 }
 
-// parseGenericOrCustomLiteral
+pub fn parseGenericOrCustomLiteral(parser: *Parser) !Node {
+    // TODO: implement parseCustomLiteral
+    return parser.parseGeneric(.{ .is_expression = true });
+}
+
 // parseCustomLiteral
 
 pub fn checkNotInsideDef(
@@ -2395,12 +2398,19 @@ pub fn parseGeneric2(
         is_expression: bool,
     },
 ) !Node {
-    const path = try parser.parsePath2(
+    const lexer = &parser.lexer;
+
+    const path = Node.init(try parser.parsePath2(
         options.is_global,
         options.location,
-    );
-    // TODO: implement
-    return Node.init(path);
+    ));
+    const t = try parser.parseTypeArgs(path);
+
+    // TODO: implement makeNilableExpression
+
+    try lexer.skipSpace();
+
+    return t;
 }
 
 pub fn parsePath(parser: *Parser) !*Path {
@@ -2451,7 +2461,31 @@ pub fn parsePath2(
     });
 }
 
-// parseTypeArgs
+pub fn parseTypeArgs(parser: *Parser, name: Node) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    if (lexer.token.type != .op_lparen) return name;
+
+    try lexer.skipTokenAndSpaceOrNewline();
+    var args = ArrayList(Node).init(allocator);
+    var named_args: ?ArrayList(*NamedArgument) = null;
+    // TODO: implement
+
+    try lexer.skipSpaceOrNewline();
+    try parser.check(.op_rparen);
+    const end_location = lexer.tokenEndLocation();
+    try lexer.skipToken();
+
+    return Generic.node(allocator, .{
+        .name = name,
+        .type_vars = args,
+        .named_args = named_args,
+        .location = name.location(),
+        .end_location = end_location,
+    });
+}
+
 // parseNamedTypeArgs
 
 pub fn consumeTypeSplatStar(parser: *Parser) !bool {
@@ -4064,6 +4098,12 @@ fn _main() !void {
     assert(node == .lib_def);
     node = node.lib_def.body;
     assert(node == .type_def);
+
+    // parseTypeArgs
+    parser = try Parser.new("Foo()");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .generic);
 
     // p("{}\n", .{});
 

@@ -1041,7 +1041,7 @@ pub const Generic = struct {
 
     name: Node,
     type_vars: ArrayList(Node),
-    names_args: ?ArrayList(*NamedArgument) = null,
+    named_args: ?ArrayList(*NamedArgument) = null,
     suffix: Suffix = .none,
 
     pub const Suffix = enum {
