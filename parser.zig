@@ -307,8 +307,11 @@ pub fn parseMultiAssign(parser: *Parser) !Node {
 //             }
 //         }
 //
-//         const multi = try MultiAssign.node(allocator, targets, values);
-//         multi.setLocation(location);
+//         const multi = try MultiAssign.node(allocator, .{
+//             .targets = targets,
+//             .values = values,
+//             .location = location,
+//         });
 //         return error.Unimplemented;
 //     } else {
 //         return parser.unexpectedToken(.{});
@@ -853,8 +856,9 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             return node;
         },
         .char => {
-            const value = lexer.token.value.char;
-            const node = try CharLiteral.node(allocator, value);
+            const node = try CharLiteral.node(allocator, .{
+                .value = lexer.token.value.char,
+            });
             try parser.skipNodeToken(node);
             return node;
         },
@@ -872,8 +876,9 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             return parser.parseSymbolArray();
         },
         .symbol => {
-            const value = lexer.token.value.string;
-            const node = try SymbolLiteral.node(allocator, value);
+            const node = try SymbolLiteral.node(allocator, .{
+                .value = lexer.token.value.string,
+            });
             try parser.skipNodeToken(node);
             return node;
         },
@@ -964,14 +969,18 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                         // TODO
                         .true => {
                             return try parser.checkTypeDeclaration() orelse {
-                                const node = try BoolLiteral.node(allocator, true);
+                                const node = try BoolLiteral.node(allocator, .{
+                                    .value = true,
+                                });
                                 try parser.skipNodeToken(node);
                                 return node;
                             };
                         },
                         .false => {
                             return try parser.checkTypeDeclaration() orelse {
-                                const node = try BoolLiteral.node(allocator, false);
+                                const node = try BoolLiteral.node(allocator, .{
+                                    .value = false,
+                                });
                                 try parser.skipNodeToken(node);
                                 return node;
                             };
@@ -1274,8 +1283,12 @@ pub fn parseDelimiter(
         // TODO: implement
         return parser.unexpectedToken(.{ .msg = "unimplemented" });
     } else {
-        const string = try parser.combinePieces(pieces, delimiter_state);
-        result = try StringLiteral.node(allocator, string);
+        result = try StringLiteral.node(allocator, .{
+            .value = try parser.combinePieces(
+                pieces,
+                delimiter_state,
+            ),
+        });
     }
 
     switch (delimiter_state.delimiters) {
@@ -1440,9 +1453,9 @@ pub fn parseStringOrSymbolArray(
         _ = try lexer.nextStringArrayToken();
         switch (lexer.token.type) {
             .string => {
-                const value = lexer.token.value.string;
-                const string = try NodeType.node(allocator, value);
-                try strings.append(string);
+                try strings.append(try NodeType.node(allocator, .{
+                    .value = lexer.token.value.string,
+                }));
             },
             .string_array_end => {
                 try lexer.skipToken();
@@ -1734,9 +1747,11 @@ pub fn newHashLiteral(
         }
     }
 
-    const node = try HashLiteral.node(allocator, entries, of);
-    node.setEndLocation(end_location.*);
-    return node;
+    return HashLiteral.node(allocator, .{
+        .entries = entries,
+        .of = of,
+        .end_location = end_location.*,
+    });
 }
 
 // parseNamedTuple
@@ -2132,10 +2147,11 @@ pub fn parseUnionType(parser: *Parser) !Node {
         if (lexer.token.type != .op_bar) break;
     }
 
-    const u = try Union.node(allocator, types);
-    u.copyLocation(first_type);
-    u.copyEndLocation(last_type);
-    return u;
+    return Union.node(allocator, .{
+        .types = types,
+        .location = first_type.location(),
+        .end_location = last_type.endLocation(),
+    });
 }
 
 pub fn parseAtomicTypeWithSuffix(parser: *Parser) !Node {
@@ -2331,7 +2347,9 @@ pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
                 try lexer.skipTokenAndSpaceOrNewline();
                 try parser.checkIdentKeyword(.class);
                 try lexer.skipTokenAndSpace();
-                const node = try Metaclass.node(allocator, t.*);
+                const node = try Metaclass.node(allocator, .{
+                    .name = t.*,
+                });
                 node.copyLocation(t.*);
                 t.* = node;
             },
@@ -2382,9 +2400,11 @@ pub fn parseProcTypeOutput(
         output_type = try parser.parseUnionType();
     }
 
-    const node = try ProcNotation.node(allocator, input_types, output_type);
-    node.setLocation(location);
-    return node;
+    return ProcNotation.node(allocator, .{
+        .inputs = input_types,
+        .output = output_type,
+        .location = location,
+    });
 }
 
 pub fn makeNilableType(parser: *const Parser, t: Node) !Node {
@@ -2398,7 +2418,9 @@ pub fn makeNilableType(parser: *const Parser, t: Node) !Node {
     try types.append(t);
     try types.append(n);
 
-    const u = try Union.node(allocator, types);
+    const u = try Union.node(allocator, .{
+        .types = types,
+    });
     u.copyLocation(t);
     return u;
 }
@@ -2415,7 +2437,9 @@ pub fn makePointerType(parser: *const Parser, t: Node) !Node {
     var type_vars = ArrayList(Node).init(allocator);
     try type_vars.append(t);
 
-    const generic = try Generic.node(allocator, pointer, type_vars, .{
+    const generic = try Generic.node(allocator, .{
+        .name = pointer,
+        .type_vars = type_vars,
         .suffix = .asterisk,
     });
     generic.copyLocation(t);
@@ -2433,7 +2457,9 @@ pub fn makeStaticArrayType(parser: *const Parser, t: Node, size: Node) !Node {
     try type_vars.append(t);
     try type_vars.append(size);
 
-    const generic = try Generic.node(allocator, static_array, type_vars, .{
+    const generic = try Generic.node(allocator, .{
+        .name = static_array,
+        .type_vars = type_vars,
         .suffix = .bracket,
     });
     generic.copyLocation(t);
@@ -2574,10 +2600,11 @@ pub fn parseTypeof(parser: *Parser) !Node {
     const end_location = lexer.tokenEndLocation();
     try lexer.skipTokenAndSpace();
 
-    const node = try TypeOf.node(allocator, exps);
-    node.setLocation(location);
-    node.setEndLocation(end_location);
-    return node;
+    return TypeOf.node(allocator, .{
+        .expressions = exps,
+        .location = location,
+        .end_location = end_location,
+    });
 }
 // parseVisibilityModifier
 // parseAsm
@@ -2768,10 +2795,12 @@ pub fn parseOffsetof(parser: *Parser) !Node {
     try parser.check(.op_rparen);
     try lexer.skipTokenAndSpace();
 
-    const node = try OffsetOf.node(allocator, t, offset);
-    node.setLocation(location);
-    node.setEndLocation(end_location);
-    return node;
+    return OffsetOf.node(allocator, .{
+        .offsetof_type = t,
+        .offset = offset,
+        .location = location,
+        .end_location = end_location,
+    });
 }
 
 // pub fn parseTypeDef(parser: *Parser) Node {
