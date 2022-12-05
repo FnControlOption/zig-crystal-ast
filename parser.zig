@@ -518,14 +518,12 @@ pub fn parseOpAssign(
 
                     try parser.pushVar(atomic);
 
-                    atomic = try Assign.node(
-                        allocator,
-                        atomic,
-                        atomic_value,
-                        .{ .doc = doc },
-                    );
-                    atomic.setLocation(location);
-                    return atomic;
+                    return Assign.node(allocator, .{
+                        .target = atomic,
+                        .value = atomic_value,
+                        .location = location,
+                        .doc = doc,
+                    });
                 }
             },
             else => |token_type| {
@@ -559,7 +557,7 @@ pub fn parseRange(parser: *Parser) !Node {
 inline fn parseOperator(
     parser: *Parser,
     comptime options: struct {
-        node: type,
+        node_type: type,
         operators: []const Token.Kind,
         next_operator: []const u8,
         right_associative: ?[]const u8 = null,
@@ -593,7 +591,7 @@ inline fn parseOperator(
                 lexer.slash_is_regex = true;
                 try lexer.skipTokenAndSpaceOrNewline();
                 const right = try parseRight(parser);
-                if (options.node == Call) {
+                if (options.node_type == Call) {
                     var args = ArrayList(Node).init(allocator);
                     try args.append(right);
                     left = try Call.node(allocator, .{
@@ -603,7 +601,7 @@ inline fn parseOperator(
                         .name_location = name_location,
                     });
                 } else {
-                    left = try options.node.node(allocator, .{
+                    left = try options.node_type.node(allocator, .{
                         .left = left,
                         .right = right,
                     });
@@ -621,7 +619,7 @@ inline fn parseOperator(
 pub fn parseOr(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parseAnd",
-        .node = Or,
+        .node_type = Or,
         .operators = &.{.op_bar_bar},
     });
 }
@@ -629,7 +627,7 @@ pub fn parseOr(parser: *Parser) !Node {
 pub fn parseAnd(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parseEquality",
-        .node = And,
+        .node_type = And,
         .operators = &.{.op_amp_amp},
     });
 }
@@ -637,7 +635,7 @@ pub fn parseAnd(parser: *Parser) !Node {
 pub fn parseEquality(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parseCmp",
-        .node = Call,
+        .node_type = Call,
         .operators = &.{ .op_lt, .op_lt_eq, .op_gt, .op_gt_eq, .op_lt_eq_gt },
     });
 }
@@ -645,7 +643,7 @@ pub fn parseEquality(parser: *Parser) !Node {
 pub fn parseCmp(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parseLogicalOr",
-        .node = Call,
+        .node_type = Call,
         .operators = &.{ .op_eq_eq, .op_bang_eq, .op_eq_tilde, .op_bang_tilde, .op_eq_eq_eq },
     });
 }
@@ -653,7 +651,7 @@ pub fn parseCmp(parser: *Parser) !Node {
 pub fn parseLogicalOr(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parseLogicalAnd",
-        .node = Call,
+        .node_type = Call,
         .operators = &.{ .op_bar, .op_caret },
     });
 }
@@ -661,7 +659,7 @@ pub fn parseLogicalOr(parser: *Parser) !Node {
 pub fn parseLogicalAnd(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parseShift",
-        .node = Call,
+        .node_type = Call,
         .operators = &.{.op_amp},
     });
 }
@@ -669,7 +667,7 @@ pub fn parseLogicalAnd(parser: *Parser) !Node {
 pub fn parseShift(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parseAddOrSub",
-        .node = Call,
+        .node_type = Call,
         .operators = &.{ .op_lt_lt, .op_gt_gt },
     });
 }
@@ -700,9 +698,9 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
                     .obj = left,
                     .name = method,
                     .args = args,
-                    .name_location = name_location,
                     .location = location,
                     .end_location = right.endLocation(),
+                    .name_location = name_location,
                 });
             },
             .number => {
@@ -722,9 +720,9 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
                             .obj = left,
                             .name = method,
                             .args = args,
-                            .name_location = name_location,
                             .location = location,
                             .end_location = right.endLocation(),
+                            .name_location = name_location,
                         });
                     },
                     else => {
@@ -742,7 +740,7 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
 pub fn parseMulOrDiv(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parsePow",
-        .node = Call,
+        .node_type = Call,
         .operators = &.{ .op_star, .op_slash, .op_slash_slash, .op_percent, .op_amp_star },
     });
 }
@@ -750,7 +748,7 @@ pub fn parseMulOrDiv(parser: *Parser) !Node {
 pub fn parsePow(parser: *Parser) !Node {
     return parser.parseOperator(.{
         .next_operator = "parsePrefix",
-        .node = Call,
+        .node_type = Call,
         .operators = &.{ .op_star_star, .op_amp_star_star },
         .right_associative = "parsePow",
     });
@@ -779,9 +777,9 @@ pub fn parsePrefix(parser: *Parser) !Node {
                     .obj = obj,
                     .name = token_type.toString(),
                     .args = ArrayList(Node).init(allocator),
-                    .name_location = name_location,
                     .location = location,
                     .end_location = obj.endLocation(),
+                    .name_location = name_location,
                 });
             }
         },
@@ -847,9 +845,10 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         // TODO
         .number => {
             lexer.wants_regex = false;
-            const value = lexer.token.value.string;
-            const kind = lexer.token.number_kind;
-            const node = try NumberLiteral.node(allocator, value, kind);
+            const node = try NumberLiteral.node(allocator, .{
+                .value = lexer.token.value.string,
+                .kind = lexer.token.number_kind,
+            });
             try parser.skipNodeToken(node);
             return node;
         },
@@ -1088,13 +1087,13 @@ pub fn nextComesColonSpace(parser: *Parser) bool {
 
 pub fn newNodeCheckTypeDeclaration(
     parser: *Parser,
-    comptime Exp: type,
+    comptime NodeType: type,
 ) !Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
     const name = lexer.token.value.string;
-    const v = try Exp.node(allocator, .{ .name = name });
+    const v = try NodeType.node(allocator, .{ .name = name });
     v.setLocation(lexer.token.location());
     v.setEndLocation(lexer.tokenEndLocation());
     lexer.wants_regex = false;
@@ -1429,7 +1428,7 @@ pub fn parseSymbolArray(parser: *Parser) !Node {
 
 pub fn parseStringOrSymbolArray(
     parser: *Parser,
-    comptime StringOrSymbolLiteral: type,
+    comptime NodeType: type,
     elements_type: []const u8,
 ) !Node {
     const lexer = &parser.lexer;
@@ -1442,7 +1441,7 @@ pub fn parseStringOrSymbolArray(
         switch (lexer.token.type) {
             .string => {
                 const value = lexer.token.value.string;
-                const string = try StringOrSymbolLiteral.node(allocator, value);
+                const string = try NodeType.node(allocator, value);
                 try strings.append(string);
             },
             .string_array_end => {
@@ -2303,10 +2302,11 @@ pub fn parseTypeArg(parser: *Parser) Error!Node {
     const allocator = lexer.allocator;
 
     if (lexer.token.type == .number) {
-        const value = lexer.token.value.string;
-        const kind = lexer.token.number_kind;
-        const num = try NumberLiteral.node(allocator, value, kind);
-        num.setLocation(lexer.token.location());
+        const num = try NumberLiteral.node(allocator, .{
+            .value = lexer.token.value.string,
+            .kind = lexer.token.number_kind,
+            .location = lexer.token.location(),
+        });
         try lexer.skipTokenAndSpace();
         return num;
     }
@@ -2613,15 +2613,13 @@ pub fn parseLib(parser: *Parser) !Node {
     const end_location = lexer.tokenEndLocation();
     try lexer.skipTokenAndSpace();
 
-    const lib_def = try LibDef.node(
-        allocator,
-        name,
-        body,
-        .{ .name_location = name_location },
-    );
-    lib_def.setLocation(location);
-    lib_def.setEndLocation(end_location);
-    return lib_def;
+    return LibDef.node(allocator, .{
+        .name = name,
+        .body = body,
+        .location = location,
+        .end_location = end_location,
+        .name_location = name_location,
+    });
 }
 
 // parseLibBody
@@ -2687,7 +2685,7 @@ pub fn parseInstanceSizeof(parser: *Parser) !Node {
     return parser.parseSizeof2(InstanceSizeOf);
 }
 
-pub fn parseSizeof2(parser: *Parser, comptime Exp: type) !Node {
+pub fn parseSizeof2(parser: *Parser, comptime NodeType: type) !Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
@@ -2707,7 +2705,7 @@ pub fn parseSizeof2(parser: *Parser, comptime Exp: type) !Node {
     try parser.check(.op_rparen);
     try lexer.skipTokenAndSpace();
 
-    const node = try Exp.node(allocator, .{ .exp = t });
+    const node = try NodeType.node(allocator, .{ .exp = t });
     node.setLocation(location);
     node.setEndLocation(end_location);
     return node;
@@ -2746,11 +2744,10 @@ pub fn parseOffsetof(parser: *Parser) !Node {
                     ),
                     lexer.token,
                 );
-            break :blk try NumberLiteral.node(
-                allocator,
-                lexer.token.value.string,
-                lexer.token.number_kind,
-            );
+            break :blk try NumberLiteral.node(allocator, .{
+                .value = lexer.token.value.string,
+                .kind = lexer.token.number_kind,
+            });
         },
         else => {
             return lexer.raiseFor(
@@ -2804,15 +2801,13 @@ pub fn parseCStructOrUnion(
     const end_location = lexer.tokenEndLocation();
     try lexer.skipTokenAndSpace();
 
-    const node = try CStructOrUnionDef.node(
-        allocator,
-        name,
-        try Expressions.from(allocator, body),
-        .{ .is_union = options.is_union },
-    );
-    node.setLocation(location);
-    node.setEndLocation(end_location);
-    return node;
+    return CStructOrUnionDef.node(allocator, .{
+        .name = name,
+        .body = try Expressions.from(allocator, body),
+        .is_union = options.is_union,
+        .location = location,
+        .end_location = end_location,
+    });
 }
 
 // parseCStructOrUnionBody

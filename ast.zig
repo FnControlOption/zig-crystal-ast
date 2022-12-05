@@ -168,20 +168,61 @@ pub const Node = union(enum) {
     }
 };
 
-fn NodeAllocator(comptime name: []const u8, comptime This: type) type {
+fn NodeAllocator(
+    comptime name: []const u8,
+    comptime NodeType: type,
+    comptime expressions: []const []const u8,
+) type {
+    const parameters = @typeInfo(NodeType).Struct.fields;
+    invalid: inline for (expressions) |exp| {
+        inline for (parameters) |param| {
+            if (comptime std.mem.eql(u8, param.name, exp))
+                continue :invalid;
+        }
+        @compileError("invalid parameter '" ++ exp ++ "' for " ++ @typeName(NodeType));
+    }
     return struct {
-        pub fn allocate(allocator: Allocator, options: This) !*This {
-            const instance = try allocator.create(This);
-            instance.* = options;
+        pub fn allocate(allocator: Allocator, options: anytype) !*NodeType {
+            const OptionsType = @TypeOf(options);
+            const options_type_info = @typeInfo(OptionsType);
+            if (options_type_info != .Struct) {
+                @compileError("expected tuple or struct argument, found " ++ @typeName(OptionsType));
+            }
+            const arguments = options_type_info.Struct.fields;
+            unknown: inline for (arguments) |arg| {
+                inline for (parameters) |param| {
+                    if (comptime std.mem.eql(u8, param.name, arg.name))
+                        continue :unknown;
+                }
+                @compileError("unknown argument '" ++ arg.name ++ "' for " ++ @typeName(NodeType));
+            }
+            const instance = try allocator.create(NodeType);
+            inline for (parameters) |param| {
+                @field(instance, param.name) = blk: {
+                    inline for (arguments) |arg| {
+                        if (comptime std.mem.eql(u8, param.name, arg.name)) {
+                            const value = @field(options, arg.name);
+                            inline for (expressions) |exp| {
+                                if (comptime std.mem.eql(u8, exp, arg.name))
+                                    break :blk try Expressions.from(allocator, value);
+                            }
+                            break :blk value;
+                        }
+                    }
+                    if (param.default_value) |default_value|
+                        break :blk @ptrCast(*align(1) const param.field_type, default_value).*;
+                    @compileError("missing argument '" ++ param.name ++ "' for " ++ @typeName(NodeType));
+                };
+            }
             return instance;
         }
 
-        pub fn node(allocator: Allocator, options: This) !Node {
+        pub fn node(allocator: Allocator, options: anytype) !Node {
             return @unionInit(Node, name, try allocate(allocator, options));
         }
 
-        pub fn toNode(this: *This) Node {
-            return @unionInit(Node, name, this);
+        pub fn toNode(self: *NodeType) Node {
+            return @unionInit(Node, name, self);
         }
     };
 }
@@ -191,7 +232,7 @@ fn Singleton(comptime name: []const u8) type {
         location: ?Location = null,
         end_location: ?Location = null,
 
-        pub usingnamespace NodeAllocator(name, @This());
+        pub usingnamespace NodeAllocator(name, @This(), &.{});
     };
 }
 
@@ -212,7 +253,7 @@ pub const Expressions = struct {
     expressions: ArrayList(Node),
     keyword: Keyword = .none,
 
-    pub usingnamespace NodeAllocator("expressions", Expressions);
+    pub usingnamespace NodeAllocator("expressions", Expressions, &.{});
 
     pub fn from(allocator: Allocator, obj: anytype) !Node {
         switch (@TypeOf(obj)) {
@@ -383,31 +424,17 @@ pub const NumberLiteral = struct {
     value: []const u8,
     kind: NumberKind = .i32,
 
-    pub fn allocate(
-        allocator: Allocator,
-        value: []const u8,
-        kind: NumberKind,
-    ) !*@This() {
-        const instance = try allocator.create(@This());
-        instance.* = .{
-            .value = value,
-            .kind = kind,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        value: []const u8,
-        kind: NumberKind,
-    ) !Node {
-        return Node{ .number_literal = try allocate(allocator, value, kind) };
-    }
+    pub usingnamespace NodeAllocator("number_literal", @This(), &.{});
 
     pub fn fromNumber(allocator: Allocator, number: anytype) !Node {
-        const value = try std.fmt.allocPrint(allocator, "{d}", .{number});
-        const kind = NumberKind.fromNumber(number);
-        return node(allocator, value, kind);
+        return NumberLiteral.node(allocator, .{
+            .value = try std.fmt.allocPrint(
+                allocator,
+                "{d}",
+                .{number},
+            ),
+            .kind = NumberKind.fromNumber(number),
+        });
     }
 
     pub fn hasSign(self: *const @This()) bool {
@@ -492,7 +519,7 @@ pub const ArrayLiteral = struct {
     of: ?Node = null,
     name: ?Node = null,
 
-    pub usingnamespace NodeAllocator("array_literal", @This());
+    pub usingnamespace NodeAllocator("array_literal", @This(), &.{});
 
     pub fn map(
         allocator: Allocator,
@@ -671,10 +698,10 @@ pub const TupleLiteral = struct {
     }
 };
 
-fn SpecialVar(comptime This: type) type {
+fn SpecialVar(comptime NodeType: type) type {
     return struct {
-        pub fn isSpecialVar(this: *const This) bool {
-            return std.mem.startsWith(u8, this.name, "$");
+        pub fn isSpecialVar(self: *const NodeType) bool {
+            return std.mem.startsWith(u8, self.name, "$");
         }
     };
 }
@@ -687,7 +714,7 @@ pub const Var = struct {
 
     name: []const u8,
 
-    pub usingnamespace NodeAllocator("var", @This());
+    pub usingnamespace NodeAllocator("var", @This(), &.{});
 };
 
 pub const Block = struct {
@@ -739,7 +766,7 @@ pub const Call = struct {
     is_expansion: bool = false,
     has_parentheses: bool = false,
 
-    pub usingnamespace NodeAllocator("call", @This());
+    pub usingnamespace NodeAllocator("call", @This(), &.{});
 };
 
 pub const NamedArgument = struct {
@@ -823,31 +850,9 @@ pub const Assign = struct {
 
     target: Node,
     value: Node,
-    doc: ?[]const u8,
+    doc: ?[]const u8 = null,
 
-    pub fn allocate(
-        allocator: Allocator,
-        target: Node,
-        value: Node,
-        options: struct { doc: ?[]const u8 = null },
-    ) !*@This() {
-        const instance = try allocator.create(@This());
-        instance.* = .{
-            .target = target,
-            .value = value,
-            .doc = options.doc,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        target: Node,
-        value: Node,
-        options: anytype,
-    ) !Node {
-        return Node{ .assign = try allocate(allocator, target, value, options) };
-    }
+    pub usingnamespace NodeAllocator("assign", @This(), &.{});
 };
 
 pub const OpAssign = struct {
@@ -895,7 +900,7 @@ fn SimpleNamedNode(comptime name: []const u8) type {
 
         name: []const u8,
 
-        pub usingnamespace NodeAllocator(name, @This());
+        pub usingnamespace NodeAllocator(name, @This(), &.{});
     };
 }
 
@@ -921,7 +926,7 @@ fn BinaryOp(comptime name: []const u8) type {
         left: Node,
         right: Node,
 
-        pub usingnamespace NodeAllocator(name, @This());
+        pub usingnamespace NodeAllocator(name, @This(), &.{});
     };
 }
 
@@ -1064,7 +1069,7 @@ fn UnaryExpression(comptime name: []const u8) type {
 
         exp: Node,
 
-        pub usingnamespace NodeAllocator(name, @This());
+        pub usingnamespace NodeAllocator(name, @This(), &.{});
     };
 }
 
@@ -1203,7 +1208,7 @@ pub const Path = struct {
     is_global: bool = false,
     visibility: Visibility = .public,
 
-    pub usingnamespace NodeAllocator("path", @This());
+    pub usingnamespace NodeAllocator("path", @This(), &.{});
 
     pub fn global(allocator: Allocator, name: []const u8) !Node {
         var names = ArrayList([]const u8).init(allocator);
@@ -1401,7 +1406,7 @@ pub const TypeDeclaration = struct {
     declared_type: Node,
     value: ?Node = null,
 
-    pub usingnamespace NodeAllocator("type_declaration", @This());
+    pub usingnamespace NodeAllocator("type_declaration", @This(), &.{});
 };
 
 pub const UninitializedVar = struct {
@@ -1499,7 +1504,7 @@ fn ControlExpression(comptime name: []const u8) type {
 
         exp: ?Node = null,
 
-        pub usingnamespace NodeAllocator(name, @This());
+        pub usingnamespace NodeAllocator(name, @This(), &.{});
     };
 }
 
@@ -1538,36 +1543,10 @@ pub const LibDef = struct {
 
     name: []const u8,
     body: Node,
-    name_location: ?Location,
-    visibility: Visibility,
+    name_location: ?Location = null,
+    visibility: Visibility = .public,
 
-    pub fn allocate(
-        allocator: Allocator,
-        name: []const u8,
-        body: anytype,
-        options: struct {
-            name_location: ?Location = null,
-            visibility: Visibility = .public,
-        },
-    ) !*@This() {
-        const instance = try allocator.create(@This());
-        instance.* = .{
-            .name = name,
-            .body = try Expressions.from(allocator, body),
-            .name_location = options.name_location,
-            .visibility = options.visibility,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        name: []const u8,
-        body: anytype,
-        options: anytype,
-    ) !Node {
-        return Node{ .lib_def = try allocate(allocator, name, body, options) };
-    }
+    pub usingnamespace NodeAllocator("lib_def", @This(), &.{"body"});
 };
 
 pub const FunDef = struct {
@@ -1597,31 +1576,13 @@ pub const CStructOrUnionDef = struct {
 
     name: []const u8,
     body: Node,
-    is_union: bool,
+    is_union: bool = false,
 
-    pub fn allocate(
-        allocator: Allocator,
-        name: []const u8,
-        body: anytype,
-        options: struct { is_union: bool = false },
-    ) !*@This() {
-        const instance = try allocator.create(@This());
-        instance.* = .{
-            .name = name,
-            .body = try Expressions.from(allocator, body),
-            .is_union = options.is_union,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        name: []const u8,
-        body: anytype,
-        options: anytype,
-    ) !Node {
-        return Node{ .c_struct_or_union_def = try allocate(allocator, name, body, options) };
-    }
+    pub usingnamespace NodeAllocator(
+        "c_struct_or_union_def",
+        @This(),
+        &.{"body"},
+    );
 };
 
 pub const EnumDef = struct {
@@ -1634,7 +1595,7 @@ pub const EnumDef = struct {
     doc: ?[]const u8 = null,
     visibility: Visibility = .public,
 
-    pub usingnamespace NodeAllocator("enum_def", @This());
+    pub usingnamespace NodeAllocator("enum_def", @This(), &.{});
 };
 
 pub const ExternalVar = struct {
@@ -1951,8 +1912,8 @@ pub fn main() !void {
     p("{}\n", .{try Until.node(allocator, try BoolLiteral.node(allocator, true), null)});
     p("{}\n", .{try Rescue.node(allocator, null)});
     p("{}\n", .{try ExceptionHandler.node(allocator, null)});
-    p("{}\n", .{try LibDef.node(allocator, "Foo", null, .{})});
-    p("{}\n", .{try CStructOrUnionDef.node(allocator, "Foo", null, .{})});
+    p("{}\n", .{try LibDef.node(allocator, .{ .name = "Foo", .body = null })});
+    p("{}\n", .{try CStructOrUnionDef.node(allocator, .{ .name = "Foo", .body = null })});
     p("{}\n", .{try MacroIf.node(allocator, try BoolLiteral.node(allocator, true), null, null)});
     p("{}\n", .{(try Nop.node(allocator, .{})).isNop()});
     p("{}\n", .{(try BoolLiteral.node(allocator, true)).isTrueLiteral()});
