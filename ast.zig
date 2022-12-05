@@ -218,10 +218,10 @@ fn NodeAllocator(
         }
 
         pub fn node(allocator: Allocator, options: anytype) !Node {
-            return @unionInit(Node, name, try allocate(allocator, options));
+            return Node.init(try allocate(allocator, options));
         }
 
-        pub fn toNode(self: *NodeType) Node {
+        fn toNode(self: *NodeType) Node {
             return @unionInit(Node, name, self);
         }
     };
@@ -1214,6 +1214,7 @@ pub const TypeDef = struct {
 
     name: []const u8,
     type_spec: Node,
+    name_location: ?Location = null,
 
     pub usingnamespace NodeAllocator("type_def", @This(), &.{});
 };

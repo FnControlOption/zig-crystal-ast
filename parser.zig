@@ -989,7 +989,7 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                         .@"enum" => {
                             return try parser.checkTypeDeclaration() orelse {
                                 try parser.checkNotInsideDef("can't define enum");
-                                return Node.init(try parser.parseEnumDef());
+                                return parser.parseEnumDef();
                             };
                         },
                         // TODO
@@ -2234,7 +2234,7 @@ pub fn parseGeneric2(
         options.location,
     );
     // TODO: implement
-    return path.toNode();
+    return Node.init(path);
 }
 
 pub fn parsePath(parser: *Parser) !*Path {
@@ -2679,7 +2679,9 @@ pub fn parseLibBodyExpWithoutLocation(parser: *Parser) !Node {
         // TODO
         .ident => {
             // TODO
-            if (lexer.token.value.isKeyword(.@"struct")) {
+            if (lexer.token.value.isKeyword(.type)) {
+                return parser.parseTypeDef();
+            } else if (lexer.token.value.isKeyword(.@"struct")) {
                 parser.inside_c_struct = true;
                 defer parser.inside_c_struct = false;
                 return parser.parseCStructOrUnion(.{
@@ -2690,7 +2692,7 @@ pub fn parseLibBodyExpWithoutLocation(parser: *Parser) !Node {
                     .is_union = true,
                 });
             } else if (lexer.token.value.isKeyword(.@"enum")) {
-                return Node.init(try parser.parseEnumDef());
+                return parser.parseEnumDef();
             } else {
                 return parser.unexpectedToken(.{});
             }
@@ -2806,16 +2808,26 @@ pub fn parseOffsetof(parser: *Parser) !Node {
     });
 }
 
-// pub fn parseTypeDef(parser: *Parser) Node {
-//     const lexer = &parser.lexer;
-//     try lexer.skipTokenAndSpaceOrNewline();
-//     const name = try parser.checkConst();
-//     const name_location = lexer.token.location();
-//     try lexer.skipTokenAndSpaceOrNewline();
-//     try parser.check(.op_eq);
-//     try lexer.skipTokenAndSpaceOrNewline();
-//     const type = parser.parseBareProcType();
-// }
+pub fn parseTypeDef(parser: *Parser) !Node {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    try lexer.skipTokenAndSpaceOrNewline();
+    const name = try parser.checkConst();
+    const name_location = lexer.token.location();
+    try lexer.skipTokenAndSpaceOrNewline();
+    try parser.check(.op_eq);
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    const t = try parser.parseBareProcType();
+    try lexer.skipSpace();
+
+    return TypeDef.node(allocator, .{
+        .name = name,
+        .type_spec = t,
+        .name_location = name_location,
+    });
+}
 
 pub fn parseCStructOrUnion(
     parser: *Parser,
@@ -2932,7 +2944,7 @@ pub fn parseCStructOrUnionFields(
     }
 }
 
-pub fn parseEnumDef(parser: *Parser) !*EnumDef {
+pub fn parseEnumDef(parser: *Parser) !Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
@@ -2965,7 +2977,7 @@ pub fn parseEnumDef(parser: *Parser) !*EnumDef {
     const end_location = lexer.tokenEndLocation();
     try lexer.skipTokenAndSpace();
 
-    return EnumDef.allocate(allocator, .{
+    return EnumDef.node(allocator, .{
         .name = name,
         .members = members,
         .base_type = base_type,
@@ -3844,8 +3856,18 @@ fn _main() !void {
     assert(expressions.len == 2);
     node = expressions[0];
     assert(node == .lib_def);
+    node = node.lib_def.body;
+    assert(node == .enum_def);
     node = expressions[1];
     assert(node == .enum_def);
+
+    // parseTypeDef
+    parser = try Parser.new("lib X; type MyInt = Int32; end");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .lib_def);
+    node = node.lib_def.body;
+    assert(node == .type_def);
 
     // p("{}\n", .{});
 
