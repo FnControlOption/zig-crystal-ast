@@ -1460,11 +1460,10 @@ pub fn parseStringOrSymbolArray(
         }
     }
 
-    return ArrayLiteral.node(
-        allocator,
-        strings,
-        .{ .of = try Path.global(allocator, elements_type) },
-    );
+    return ArrayLiteral.node(allocator, .{
+        .elements = strings,
+        .of = try Path.global(allocator, elements_type),
+    });
 }
 
 pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
@@ -1478,13 +1477,11 @@ pub fn parseEmptyArrayLiteral(parser: *Parser) !Node {
     if (lexer.token.isKeyword(.of)) {
         try lexer.skipTokenAndSpaceOrNewline();
         const of = try parser.parseBareProcType();
-        const node = try ArrayLiteral.node(
-            allocator,
-            ArrayList(Node).init(allocator),
-            .{ .of = of },
-        );
-        node.copyEndLocation(of);
-        return node;
+        return ArrayLiteral.node(allocator, .{
+            .elements = ArrayList(Node).init(allocator),
+            .of = of,
+            .end_location = of.endLocation(),
+        });
     } else {
         return lexer.raiseAt("for empty arrays use '[] of ElementType'", line, column);
     }
@@ -1553,13 +1550,11 @@ pub fn parseArrayLiteral(parser: *Parser) !Node {
         );
     }
 
-    const node = try ArrayLiteral.node(
-        allocator,
-        exps,
-        .{ .of = of },
-    );
-    node.setEndLocation(end_location);
-    return node;
+    return ArrayLiteral.node(allocator, .{
+        .elements = exps,
+        .of = of,
+        .end_location = end_location,
+    });
 }
 
 pub fn parseHashOrTupleLiteral(

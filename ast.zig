@@ -489,35 +489,10 @@ pub const ArrayLiteral = struct {
     end_location: ?Location = null,
 
     elements: ArrayList(Node),
-    of: ?Node,
-    name: ?Node,
+    of: ?Node = null,
+    name: ?Node = null,
 
-    pub fn allocate(
-        allocator: Allocator,
-        elements: ArrayList(Node),
-        options: struct {
-            of: ?Node = null,
-            name: ?Node = null,
-        },
-    ) !*@This() {
-        const instance = try allocator.create(@This());
-        instance.* = .{
-            .elements = elements,
-            .of = options.of,
-            .name = options.name,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        elements: ArrayList(Node),
-        options: anytype,
-    ) !Node {
-        return Node{
-            .array_literal = try allocate(allocator, elements, options),
-        };
-    }
+    pub usingnamespace NodeAllocator("array_literal", @This());
 
     pub fn map(
         allocator: Allocator,
@@ -532,7 +507,10 @@ pub const ArrayLiteral = struct {
         for (values.items) |value| {
             new_values.appendAssumeCapacity(try block(allocator, value));
         }
-        return node(allocator, new_values, .{ .of = options.of });
+        return ArrayLiteral.node(allocator, .{
+            .elements = new_values,
+            .of = options.of,
+        });
     }
 
     pub fn mapWithIndex(
@@ -545,7 +523,10 @@ pub const ArrayLiteral = struct {
         for (values.items) |value, index| {
             new_values.appendAssumeCapacity(try block(allocator, value, index));
         }
-        return node(allocator, new_values, .{ .of = null });
+        return ArrayLiteral.node(allocator, .{
+            .elements = new_values,
+            .of = null,
+        });
     }
 };
 
@@ -1993,7 +1974,7 @@ pub fn main() !void {
         var values = ArrayList(Node).init(allocator);
         try values.append(try BoolLiteral.node(allocator, true));
         try values.append(try BoolLiteral.node(allocator, false));
-        const array = try ArrayLiteral.node(allocator, values, .{});
+        const array = try ArrayLiteral.node(allocator, .{ .elements = values });
         const array2 = try ArrayLiteral.map(allocator, values, .{}, struct {
             fn f(_: Allocator, node: Node) !Node {
                 return try BoolLiteral.node(allocator, !node.bool_literal.value);
