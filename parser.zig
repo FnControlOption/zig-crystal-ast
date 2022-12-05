@@ -845,7 +845,26 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         .op_lcurly => {
             return parser.parseHashOrTupleLiteral(.{});
         },
-        // TODO
+        .op_lcurly_lcurly => {
+            // TODO: implement parsePercentMacroExpression
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
+        .op_lcurly_percent => {
+            // TODO: implement parsePercentMacroControl
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
+        .op_colon_colon => {
+            // TODO: implement parseGenericOrGlobalCall
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
+        .op_minus_gt => {
+            // TODO: implement parseFunLiteral
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
+        .op_at_lsquare => {
+            // TODO: implement parseAnnotation
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
         .number => {
             lexer.wants_regex = false;
             const node = try NumberLiteral.node(allocator, .{
@@ -961,12 +980,26 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
         .magic_end_line => {
             return lexer.raiseFor("__END_LINE__ can only be used in default parameter value", lexer.token);
         },
-        // TODO
+        .magic_file => {
+            // TODO: implement
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
+        .magic_dir => {
+            // TODO: implement
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
         .ident => {
             switch (lexer.token.value) {
                 .keyword => |keyword| {
                     switch (keyword) {
-                        // TODO
+                        .begin => {
+                            // TODO: implement parseBegin
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .nil => {
+                            // TODO: implement
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
                         .true => {
                             return try parser.checkTypeDeclaration() orelse {
                                 const node = try BoolLiteral.node(allocator, .{
@@ -985,27 +1018,143 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                                 return node;
                             };
                         },
-                        // TODO
+                        .yield => {
+                            // TODO: implement parseYield
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .with => {
+                            // TODO: implement parseYieldWithScope
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .abstract => {
+                            // TODO: implement
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .def => {
+                            // TODO: implement parseDef
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .macro => {
+                            // TODO: implement parseMacro
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .require => {
+                            // TODO: implement parseRequire
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .case => {
+                            // TODO: implement parseCase
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .select => {
+                            // TODO: implement parseSelect
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .@"if" => {
+                            // TODO: implement parseIf
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .unless => {
+                            // TODO: implement parseUnless
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .include => {
+                            // TODO: implement parseInclude
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .extend => {
+                            // TODO: implement parseExtend
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .class => {
+                            // TODO: implement parseClassDef
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .@"struct" => {
+                            // TODO: implement parseClassDef
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .module => {
+                            // TODO: implement parseModuleDef
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
                         .@"enum" => {
                             return try parser.checkTypeDeclaration() orelse {
                                 try parser.checkNotInsideDef("can't define enum");
                                 return parser.parseEnumDef();
                             };
                         },
-                        // TODO
+                        .@"while" => {
+                            // TODO: implement parseWhile
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .until => {
+                            // TODO: implement parseUntil
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .@"return" => {
+                            // TODO: implement parseReturn
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .next => {
+                            // TODO: implement parseNext
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .@"break" => {
+                            // TODO: implement parseBreak
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
                         .lib => {
                             return try parser.checkTypeDeclaration() orelse {
                                 try parser.checkNotInsideDef("can't define lib");
                                 return parser.parseLib();
                             };
                         },
-                        // TODO
+                        .fun => {
+                            // TODO: implement parseFunDef
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .alias => {
+                            // TODO: implement parseAlias
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .pointerof => {
+                            // TODO: implement parsePointerof
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .sizeof => {
+                            // TODO: implement parseSizeof
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .instance_sizeof => {
+                            // TODO: implement parseInstanceSizeof
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .offsetof => {
+                            // TODO: implement parseOffsetof
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
                         .typeof => {
                             return try parser.checkTypeDeclaration() orelse {
                                 return try parser.parseTypeof();
                             };
                         },
-                        // TODO
+                        .private => {
+                            // TODO: implement parseVisibilityModifier
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .protected => {
+                            // TODO: implement parseVisibilityModifier
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .@"asm" => {
+                            // TODO: implement parseAsm
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
+                        .annotation => {
+                            // TODO: implement parseAnnotationDef
+                            return parser.unexpectedToken(.{ .msg = "unexpected" });
+                        },
                         else => {
                             const node = try parser.parseVarOrCall(.{});
                             parser.setVisibility(node);
@@ -1020,7 +1169,14 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                 },
             }
         },
-        // TODO
+        .@"const" => {
+            // TODO: implement parseGenericOrCustomLiteral
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
+        .instance_var => {
+            // TODO: implement
+            return parser.unexpectedToken(.{ .msg = "unexpected" });
+        },
         .class_var => {
             return parser.newNodeCheckTypeDeclaration(ClassVar);
         },
@@ -2161,7 +2317,7 @@ pub fn parseAtomicTypeWithSuffix(parser: *Parser) !Node {
     return t;
 }
 
-pub fn parseAtomicType(parser: *Parser) !Node {
+pub fn parseAtomicType(parser: *Parser) Error!Node {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
     const location = lexer.token.location();
@@ -2192,7 +2348,17 @@ pub fn parseAtomicType(parser: *Parser) !Node {
         .@"const", .op_colon_colon => {
             return parser.parseGeneric(.{});
         },
-        // TODO
+        .op_lcurly => {
+            // TODO: implement
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+        },
+        .op_minus_gt => {
+            return parser.parseProcTypeOutput(null, location);
+        },
+        .op_lparen => {
+            // TODO: implement
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+        },
         else => {
             return parser.unexpectedToken(.{});
         },
@@ -2385,7 +2551,7 @@ pub fn parseTypeSuffix(parser: *Parser, t: *Node) !void {
 
 pub fn parseProcTypeOutput(
     parser: *Parser,
-    input_types: ArrayList(Node),
+    input_types: ?ArrayList(Node),
     location: ?Location,
 ) !Node {
     const lexer = &parser.lexer;
@@ -2676,10 +2842,18 @@ pub fn parseLibBodyExp(parser: *Parser) !Node {
 pub fn parseLibBodyExpWithoutLocation(parser: *Parser) !Node {
     const lexer = &parser.lexer;
     switch (lexer.token.type) {
-        // TODO
+        .op_at_lsquare => {
+            // TODO: implement parseAnnotation
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+        },
         .ident => {
-            // TODO
-            if (lexer.token.value.isKeyword(.type)) {
+            if (lexer.token.value.isKeyword(.alias)) {
+                // TODO: implement parseAlias
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
+            } else if (lexer.token.value.isKeyword(.fun)) {
+                // TODO: implement parseFunDef
+                return parser.unexpectedToken(.{ .msg = "unimplemented" });
+            } else if (lexer.token.value.isKeyword(.type)) {
                 return parser.parseTypeDef();
             } else if (lexer.token.value.isKeyword(.@"struct")) {
                 parser.inside_c_struct = true;
@@ -2697,7 +2871,22 @@ pub fn parseLibBodyExpWithoutLocation(parser: *Parser) !Node {
                 return parser.unexpectedToken(.{});
             }
         },
-        // TODO
+        .@"const" => {
+            // TODO: implement
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+        },
+        .global => {
+            // TODO: implement
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+        },
+        .op_lcurly_lcurly => {
+            // TODO: implement parsePercentMacroExpression
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+        },
+        .op_lcurly_percent => {
+            // TODO: implement parsePercentMacroControl
+            return parser.unexpectedToken(.{ .msg = "unimplemented" });
+        },
         else => {
             return parser.unexpectedToken(.{});
         },
