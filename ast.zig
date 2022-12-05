@@ -755,63 +755,18 @@ pub const Call = struct {
     obj: ?Node,
     name: []const u8,
     args: ArrayList(Node),
-    block: ?*Block,
-    block_arg: ?Node,
-    named_args: ?ArrayList(*NamedArgument),
-    name_location: ?Location,
-    // name_size: ?usize,
-    doc: ?[]const u8,
-    visibility: Visibility,
-    is_global: bool,
-    is_expansion: bool,
-    has_parentheses: bool,
+    block: ?*Block = null,
+    block_arg: ?Node = null,
+    named_args: ?ArrayList(*NamedArgument) = null,
+    name_location: ?Location = null,
+    // name_size: ?usize = null,
+    doc: ?[]const u8 = null,
+    visibility: Visibility = .public,
+    is_global: bool = false,
+    is_expansion: bool = false,
+    has_parentheses: bool = false,
 
-    pub fn allocate(
-        allocator: Allocator,
-        obj: ?Node,
-        name: []const u8,
-        args: ArrayList(Node),
-        options: struct {
-            block: ?*Block = null,
-            block_arg: ?Node = null,
-            named_args: ?ArrayList(*NamedArgument) = null,
-            name_location: ?Location = null,
-            // name_size: ?usize = null,
-            doc: ?[]const u8 = null,
-            visibility: Visibility = .public,
-            is_global: bool = false,
-            is_expansion: bool = false,
-            has_parentheses: bool = false,
-        },
-    ) !*@This() {
-        const instance = try allocator.create(@This());
-        instance.* = .{
-            .obj = obj,
-            .name = name,
-            .args = args,
-            .block = options.block,
-            .block_arg = options.block_arg,
-            .named_args = options.named_args,
-            .name_location = options.name_location,
-            // .name_size = options.name_size,
-            .doc = options.doc,
-            .visibility = options.visibility,
-            .is_global = options.is_global,
-            .is_expansion = options.is_expansion,
-            .has_parentheses = options.has_parentheses,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        obj: ?Node,
-        name: []const u8,
-        args: ArrayList(Node),
-        options: anytype,
-    ) !Node {
-        return Node{ .call = try allocate(allocator, obj, name, args, options) };
-    }
+    pub usingnamespace NodeAllocator("call", @This());
 };
 
 pub const NamedArgument = struct {

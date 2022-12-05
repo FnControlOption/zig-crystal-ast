@@ -595,13 +595,12 @@ inline fn parseOperator(
                 if (options.node == Call) {
                     var args = ArrayList(Node).init(allocator);
                     try args.append(right);
-                    left = try Call.node(
-                        allocator,
-                        left,
-                        method,
-                        args,
-                        .{ .name_location = name_location },
-                    );
+                    left = try Call.node(allocator, .{
+                        .obj = left,
+                        .name = method,
+                        .args = args,
+                        .name_location = name_location,
+                    });
                 } else {
                     left = try options.node.node(allocator, .{
                         .left = left,
@@ -696,15 +695,14 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
                 const right = try parser.parseMulOrDiv();
                 var args = ArrayList(Node).init(allocator);
                 try args.append(right);
-                left = try Call.node(
-                    allocator,
-                    left,
-                    method,
-                    args,
-                    .{ .name_location = name_location },
-                );
-                left.setLocation(location);
-                left.copyEndLocation(right);
+                left = try Call.node(allocator, .{
+                    .obj = left,
+                    .name = method,
+                    .args = args,
+                    .name_location = name_location,
+                    .location = location,
+                    .end_location = right.endLocation(),
+                });
             },
             .number => {
                 switch (lexer.token.value.string[0]) {
@@ -719,15 +717,14 @@ pub fn parseAddOrSub(parser: *Parser) !Node {
                         const right = try parser.parseMulOrDiv();
                         var args = ArrayList(Node).init(allocator);
                         try args.append(right);
-                        left = try Call.node(
-                            allocator,
-                            left,
-                            method,
-                            args,
-                            .{ .name_location = name_location },
-                        );
-                        left.setLocation(location);
-                        left.copyEndLocation(right);
+                        left = try Call.node(allocator, .{
+                            .obj = left,
+                            .name = method,
+                            .args = args,
+                            .name_location = name_location,
+                            .location = location,
+                            .end_location = right.endLocation(),
+                        });
                     },
                     else => {
                         return left;
@@ -777,16 +774,14 @@ pub fn parsePrefix(parser: *Parser) !Node {
                     .end_location = obj.endLocation(),
                 });
             } else {
-                const node = try Call.node(
-                    allocator,
-                    obj,
-                    token_type.toString(),
-                    ArrayList(Node).init(allocator),
-                    .{ .name_location = name_location },
-                );
-                node.setLocation(location);
-                node.copyEndLocation(obj);
-                return node;
+                return Call.node(allocator, .{
+                    .obj = obj,
+                    .name = token_type.toString(),
+                    .args = ArrayList(Node).init(allocator),
+                    .name_location = name_location,
+                    .location = location,
+                    .end_location = obj.endLocation(),
+                });
             }
         },
         else => {
@@ -938,13 +933,16 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                     error.InvalidCharacter => return err,
                 }
             };
-            const receiver = try Global.node(allocator, .{
-                .name = "$~",
-                .location = location,
-            });
             var args = ArrayList(Node).init(allocator);
             try args.append(try NumberLiteral.fromNumber(allocator, index));
-            const node = try Call.node(allocator, receiver, method, args, .{});
+            const node = try Call.node(allocator, .{
+                .obj = try Global.node(allocator, .{
+                    .name = "$~",
+                    .location = location,
+                }),
+                .name = method,
+                .args = args,
+            });
             try parser.skipNodeToken(node);
             return node;
         },
@@ -1280,8 +1278,12 @@ pub fn parseDelimiter(
         .command => {
             var args = ArrayList(Node).init(allocator);
             try args.append(result);
-            result = try Call.node(allocator, null, "`", args, .{});
-            result.setLocation(location);
+            result = try Call.node(allocator, .{
+                .obj = null,
+                .name = "`",
+                .args = args,
+                .location = location,
+            });
         },
         .regex => {
             // TODO: implement
@@ -1960,18 +1962,15 @@ pub fn parseVarOrCall(
                         );
                     }
 
-                    break :blk try Call.node(
-                        allocator,
-                        null,
-                        name,
-                        ArrayList(Node).init(allocator),
-                        .{
-                            .named_args = named_args,
-                            .is_global = is_global,
-                            .name_location = name_location,
-                            .has_parentheses = has_parentheses,
-                        },
-                    );
+                    break :blk try Call.node(allocator, .{
+                        .obj = null,
+                        .name = name,
+                        .args = ArrayList(Node).init(allocator),
+                        .named_args = named_args,
+                        .is_global = is_global,
+                        .name_location = name_location,
+                        .has_parentheses = has_parentheses,
+                    });
                 }
             }
         }
@@ -3350,27 +3349,23 @@ fn _main() !void {
 
     assert(canBeAssigned(try Var.node(lexer.allocator, "foo")));
     assert(
-        canBeAssigned(try Call.node(
-            lexer.allocator,
-            null,
-            "foo",
-            ArrayList(Node).init(lexer.allocator),
-            .{},
-        )),
+        canBeAssigned(try Call.node(lexer.allocator, .{
+            .obj = null,
+            .name = "foo",
+            .args = ArrayList(Node).init(lexer.allocator),
+        })),
     );
     assert(
-        canBeAssigned(try Call.node(
-            lexer.allocator,
-            try Var.node(lexer.allocator, "foo"),
-            "[]",
-            blk: {
+        canBeAssigned(try Call.node(lexer.allocator, .{
+            .obj = try Var.node(lexer.allocator, "foo"),
+            .name = "[]",
+            .args = blk: {
                 var args = ArrayList(Node).init(lexer.allocator);
                 try args.append(try Var.node(lexer.allocator, "bar"));
                 // try args.append(try Var.node(lexer.allocator, "fizz"));
                 break :blk args;
             },
-            .{},
-        )),
+        })),
     );
 
     parser = try Parser.new("foo.bar");
