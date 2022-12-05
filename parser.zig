@@ -3870,6 +3870,13 @@ fn _main() !void {
     assert(node.proc_notation.inputs.?.items[1] == .underscore);
     assert(node.proc_notation.output.? == .self);
 
+    parser = try Parser.new("[] of ->");
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .array_literal);
+    node = node.array_literal.of.?;
+    assert(node == .proc_notation);
+
     // parseEmptyArrayLiteral
     parser = try Parser.new("[] of self");
     lexer = &parser.lexer;
