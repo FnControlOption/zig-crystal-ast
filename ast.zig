@@ -98,6 +98,10 @@ pub const Node = union(enum) {
     @"while": *While,
     yield: *Yield,
 
+    pub fn init(exp: anytype) Node {
+        return exp.toNode();
+    }
+
     pub fn location(node: Node) ?Location {
         switch (node) {
             inline else => |n| return n.location,
@@ -164,20 +168,30 @@ pub const Node = union(enum) {
     }
 };
 
-inline fn Singleton(comptime name: []const u8) type {
+fn NodeAllocator(comptime name: []const u8, comptime This: type) type {
+    return struct {
+        pub fn allocate(allocator: Allocator, options: This) !*This {
+            const instance = try allocator.create(This);
+            instance.* = options;
+            return instance;
+        }
+
+        pub fn node(allocator: Allocator, options: This) !Node {
+            return @unionInit(Node, name, try allocate(allocator, options));
+        }
+
+        pub fn toNode(this: *This) Node {
+            return @unionInit(Node, name, this);
+        }
+    };
+}
+
+fn Singleton(comptime name: []const u8) type {
     return struct {
         location: ?Location = null,
         end_location: ?Location = null,
 
-        pub fn allocate(allocator: Allocator) !*@This() {
-            var instance = try allocator.create(@This());
-            instance.* = .{}; // initialize fields to default values
-            return instance;
-        }
-
-        pub fn node(allocator: Allocator) !Node {
-            return @unionInit(Node, name, try allocate(allocator));
-        }
+        pub usingnamespace NodeAllocator(name, @This());
     };
 }
 
@@ -196,43 +210,24 @@ pub const Expressions = struct {
     end_location: ?Location = null,
 
     expressions: ArrayList(Node),
-    keyword: Keyword,
+    keyword: Keyword = .none,
 
-    pub fn allocate(
-        allocator: Allocator,
-        expressions: ArrayList(Node),
-        options: struct {
-            keyword: Keyword = .none,
-        },
-    ) !*@This() {
-        var instance = try allocator.create(@This());
-        instance.* = .{
-            .expressions = expressions,
-            .keyword = options.keyword,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        expressions: ArrayList(Node),
-        options: anytype,
-    ) !Node {
-        return Node{ .expressions = try allocate(allocator, expressions, options) };
-    }
+    pub usingnamespace NodeAllocator("expressions", Expressions);
 
     pub fn from(allocator: Allocator, obj: anytype) !Node {
         switch (@TypeOf(obj)) {
-            @TypeOf(null) => return Nop.node(allocator),
+            @TypeOf(null) => return Nop.node(allocator, .{}),
             ArrayList(Node) => {
                 switch (obj.items.len) {
-                    0 => return Nop.node(allocator),
+                    0 => return Nop.node(allocator, .{}),
                     1 => return obj.items[0],
-                    else => return node(allocator, obj, .{}),
+                    else => return Expressions.node(allocator, .{
+                        .expressions = obj,
+                    }),
                 }
             },
             Node => return obj,
-            ?Node => return if (obj) |n| n else Nop.node(allocator),
+            ?Node => return if (obj) |n| n else Nop.node(allocator, .{}),
             else => @compileError("Expected Node or ArrayList(Node), found " ++ @typeName(@TypeOf(obj))),
         }
     }
@@ -270,7 +265,7 @@ pub const BoolLiteral = struct {
     value: bool,
 
     pub fn allocate(allocator: Allocator, value: bool) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
@@ -393,7 +388,7 @@ pub const NumberLiteral = struct {
         value: []const u8,
         kind: NumberKind,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .value = value,
             .kind = kind,
@@ -427,7 +422,7 @@ pub const CharLiteral = struct {
     value: u8,
 
     pub fn allocate(allocator: Allocator, value: u8) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
@@ -444,7 +439,7 @@ pub const StringLiteral = struct {
     value: []const u8,
 
     pub fn allocate(allocator: Allocator, value: []const u8) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
@@ -462,7 +457,7 @@ pub const StringInterpolation = struct {
     heredoc_indent: i32 = 0,
 
     pub fn allocate(allocator: Allocator, expressions: ArrayList(Node)) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .expressions = expressions };
         return instance;
     }
@@ -479,7 +474,7 @@ pub const SymbolLiteral = struct {
     value: []const u8,
 
     pub fn allocate(allocator: Allocator, value: []const u8) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
@@ -505,7 +500,7 @@ pub const ArrayLiteral = struct {
             name: ?Node = null,
         },
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .elements = elements,
             .of = options.of,
@@ -567,7 +562,7 @@ pub const HashLiteral = struct {
         entries: ArrayList(Entry),
         of: ?Entry,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .entries = entries,
             .of = of,
@@ -600,7 +595,7 @@ pub const NamedTupleLiteral = struct {
     entries: ArrayList(Entry),
 
     pub fn allocate(allocator: Allocator, entries: ArrayList(Entry)) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .entries = entries };
         return instance;
     }
@@ -626,7 +621,7 @@ pub const RangeLiteral = struct {
         to: Node,
         is_exclusive: bool,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .from = from,
             .to = to,
@@ -668,7 +663,7 @@ pub const RegexLiteral = struct {
     options: RegexOptions = .{},
 
     pub fn allocate(allocator: Allocator, value: Node) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .value = value };
         return instance;
     }
@@ -685,7 +680,7 @@ pub const TupleLiteral = struct {
     elements: ArrayList(Node),
 
     pub fn allocate(allocator: Allocator, elements: ArrayList(Node)) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .elements = elements };
         return instance;
     }
@@ -712,7 +707,7 @@ pub const Var = struct {
     name: []const u8,
 
     pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .name = name };
         return instance;
     }
@@ -736,7 +731,7 @@ pub const Block = struct {
         args: ArrayList(*Var),
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .args = args,
             .body = try Expressions.from(allocator, body),
@@ -789,7 +784,7 @@ pub const Call = struct {
             has_parentheses: bool = false,
         },
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .obj = obj,
             .name = name,
@@ -842,7 +837,7 @@ pub const If = struct {
         then: anytype,
         @"else": anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
             .then = try Expressions.from(allocator, then),
@@ -875,7 +870,7 @@ pub const Unless = struct {
         then: anytype,
         @"else": anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
             .then = try Expressions.from(allocator, then),
@@ -908,7 +903,7 @@ pub const Assign = struct {
         value: Node,
         options: struct { doc: ?[]const u8 = null },
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .target = target,
             .value = value,
@@ -948,7 +943,7 @@ pub const MultiAssign = struct {
         targets: ArrayList(Node),
         values: ArrayList(Node),
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .targets = targets,
             .values = values,
@@ -965,22 +960,14 @@ pub const MultiAssign = struct {
     }
 };
 
-fn SimpleNamedNode(comptime tag_name: []const u8) type {
+fn SimpleNamedNode(comptime name: []const u8) type {
     return struct {
         location: ?Location = null,
         end_location: ?Location = null,
 
         name: []const u8,
 
-        pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
-            var instance = try allocator.create(@This());
-            instance.* = .{ .name = name };
-            return instance;
-        }
-
-        pub fn node(allocator: Allocator, name: []const u8) !Node {
-            return @unionInit(Node, tag_name, try allocate(allocator, name));
-        }
+        pub usingnamespace NodeAllocator(name, @This());
     };
 }
 
@@ -998,7 +985,7 @@ pub const ClassVar = SimpleNamedNode("class_var");
 
 pub const Global = SimpleNamedNode("global");
 
-inline fn BinaryOp(comptime name: []const u8) type {
+fn BinaryOp(comptime name: []const u8) type {
     return struct {
         location: ?Location = null,
         end_location: ?Location = null,
@@ -1006,26 +993,7 @@ inline fn BinaryOp(comptime name: []const u8) type {
         left: Node,
         right: Node,
 
-        pub fn allocate(
-            allocator: Allocator,
-            left: Node,
-            right: Node,
-        ) !*@This() {
-            var instance = try allocator.create(@This());
-            instance.* = .{
-                .left = left,
-                .right = right,
-            };
-            return instance;
-        }
-
-        pub fn node(
-            allocator: Allocator,
-            left: Node,
-            right: Node,
-        ) !Node {
-            return @unionInit(Node, name, try allocate(allocator, left, right));
-        }
+        pub usingnamespace NodeAllocator(name, @This());
     };
 }
 
@@ -1056,7 +1024,7 @@ pub const ProcNotation = struct {
         inputs: ?ArrayList(Node),
         output: ?Node,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .inputs = inputs,
             .output = output,
@@ -1104,7 +1072,7 @@ pub const Def = struct {
         args: ArrayList(*Arg),
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .args = args,
@@ -1142,7 +1110,7 @@ pub const Macro = struct {
         args: ArrayList(*Arg),
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .args = args,
@@ -1161,22 +1129,14 @@ pub const Macro = struct {
     }
 };
 
-inline fn UnaryExpression(comptime name: []const u8) type {
+fn UnaryExpression(comptime name: []const u8) type {
     return struct {
         location: ?Location = null,
         end_location: ?Location = null,
 
         exp: Node,
 
-        pub fn allocate(allocator: Allocator, exp: Node) !*@This() {
-            var instance = try allocator.create(@This());
-            instance.* = .{ .exp = exp };
-            return instance;
-        }
-
-        pub fn node(allocator: Allocator, exp: Node) !Node {
-            return @unionInit(Node, name, try allocate(allocator, exp));
-        }
+        pub usingnamespace NodeAllocator(name, @This());
     };
 }
 
@@ -1202,7 +1162,7 @@ pub const OffsetOf = struct {
         offsetof_type: Node,
         offset: Node,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .offsetof_type = offsetof_type,
             .offset = offset,
@@ -1265,7 +1225,7 @@ pub const When = struct {
         conds: ArrayList(Node),
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .conds = conds,
             .body = try Expressions.from(allocator, body),
@@ -1315,34 +1275,15 @@ pub const Path = struct {
     is_global: bool = false,
     visibility: Visibility = .public,
 
-    pub fn allocate(
-        allocator: Allocator,
-        names: ArrayList([]const u8),
-        is_global: bool,
-    ) !*@This() {
-        var instance = try allocator.create(@This());
-        instance.* = .{
-            .names = names,
-            .is_global = is_global,
-        };
-        return instance;
-    }
+    pub usingnamespace NodeAllocator("path", @This());
 
-    pub fn node(
-        allocator: Allocator,
-        names: ArrayList([]const u8),
-        is_global: bool,
-    ) !Node {
-        return Node{ .path = try allocate(allocator, names, is_global) };
-    }
-
-    pub fn global(
-        allocator: Allocator,
-        name: []const u8,
-    ) !Node {
+    pub fn global(allocator: Allocator, name: []const u8) !Node {
         var names = ArrayList([]const u8).init(allocator);
         try names.append(name);
-        return node(allocator, names, true);
+        return Node.init(try Path.allocate(allocator, .{
+            .names = names,
+            .is_global = true,
+        }));
     }
 };
 
@@ -1365,7 +1306,7 @@ pub const ClassDef = struct {
         name: *Path,
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .body = try Expressions.from(allocator, body),
@@ -1398,7 +1339,7 @@ pub const ModuleDef = struct {
         name: *Path,
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .body = try Expressions.from(allocator, body),
@@ -1435,7 +1376,7 @@ pub const While = struct {
         cond: Node,
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
             .body = try Expressions.from(allocator, body),
@@ -1464,7 +1405,7 @@ pub const Until = struct {
         cond: Node,
         body: anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
             .body = try Expressions.from(allocator, body),
@@ -1505,7 +1446,7 @@ pub const Generic = struct {
             suffix: Suffix = .none,
         },
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .type_vars = type_vars,
@@ -1530,31 +1471,9 @@ pub const TypeDeclaration = struct {
 
     @"var": Node,
     declared_type: Node,
-    value: ?Node,
+    value: ?Node = null,
 
-    pub fn allocate(
-        allocator: Allocator,
-        @"var": Node,
-        declared_type: Node,
-        options: struct { value: ?Node = null },
-    ) !*@This() {
-        var instance = try allocator.create(@This());
-        instance.* = .{
-            .@"var" = @"var",
-            .declared_type = declared_type,
-            .value = options.value,
-        };
-        return instance;
-    }
-
-    pub fn node(
-        allocator: Allocator,
-        @"var": Node,
-        declared_type: Node,
-        options: anytype,
-    ) !Node {
-        return Node{ .type_declaration = try allocate(allocator, @"var", declared_type, options) };
-    }
+    pub usingnamespace NodeAllocator("type_declaration", @This());
 };
 
 pub const UninitializedVar = struct {
@@ -1574,7 +1493,7 @@ pub const Rescue = struct {
     name: ?[]const u8 = null,
 
     pub fn allocate(allocator: Allocator, body: ?Node) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .body = try Expressions.from(allocator, body),
         };
@@ -1598,7 +1517,7 @@ pub const ExceptionHandler = struct {
     is_suffix: bool = false,
 
     pub fn allocate(allocator: Allocator, body: ?Node) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .body = try Expressions.from(allocator, body),
         };
@@ -1633,7 +1552,7 @@ pub const Union = struct {
     types: ArrayList(Node),
 
     pub fn allocate(allocator: Allocator, types: ArrayList(Node)) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .types = types };
         return instance;
     }
@@ -1645,22 +1564,14 @@ pub const Union = struct {
 
 pub const Self = Singleton("self");
 
-inline fn ControlExpression(comptime name: []const u8) type {
+fn ControlExpression(comptime name: []const u8) type {
     return struct {
         location: ?Location = null,
         end_location: ?Location = null,
 
         exp: ?Node = null,
 
-        pub fn allocate(allocator: Allocator) !*@This() {
-            var instance = try allocator.create(@This());
-            instance.* = .{}; // initialize fields to default values
-            return instance;
-        }
-
-        pub fn node(allocator: Allocator) !Node {
-            return @unionInit(Node, name, try allocate(allocator));
-        }
+        pub usingnamespace NodeAllocator(name, @This());
     };
 }
 
@@ -1711,7 +1622,7 @@ pub const LibDef = struct {
             visibility: Visibility = .public,
         },
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .body = try Expressions.from(allocator, body),
@@ -1766,7 +1677,7 @@ pub const CStructOrUnionDef = struct {
         body: anytype,
         options: struct { is_union: bool = false },
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .name = name,
             .body = try Expressions.from(allocator, body),
@@ -1794,6 +1705,8 @@ pub const EnumDef = struct {
     base_type: ?Node = null,
     doc: ?[]const u8 = null,
     visibility: Visibility = .public,
+
+    pub usingnamespace NodeAllocator("enum_def", @This());
 };
 
 pub const ExternalVar = struct {
@@ -1822,7 +1735,7 @@ pub const Metaclass = struct {
     name: Node,
 
     pub fn allocate(allocator: Allocator, name: Node) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .name = name };
         return instance;
     }
@@ -1858,7 +1771,7 @@ pub const TypeOf = struct {
         allocator: Allocator,
         expressions: ArrayList(Node),
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{ .expressions = expressions };
         return instance;
     }
@@ -1914,7 +1827,7 @@ pub const MacroIf = struct {
         then: anytype,
         @"else": anytype,
     ) !*@This() {
-        var instance = try allocator.create(@This());
+        const instance = try allocator.create(@This());
         instance.* = .{
             .cond = cond,
             .then = try Expressions.from(allocator, then),
@@ -2102,10 +2015,10 @@ pub fn main() !void {
     p("{}\n", .{try Unless.node(allocator, try BoolLiteral.node(allocator, true), null, null)});
     p("{}\n", .{try Def.node(allocator, "foo", ArrayList(*Arg).init(allocator), null)});
     p("{}\n", .{try When.node(allocator, ArrayList(Node).init(allocator), null)});
-    p("{}\n", .{try Path.allocate(allocator, ArrayList([]const u8).init(allocator), false)});
-    p("{}\n", .{try Path.node(allocator, ArrayList([]const u8).init(allocator), false)});
-    p("{}\n", .{try ClassDef.node(allocator, try Path.allocate(allocator, ArrayList([]const u8).init(allocator), false), null)});
-    p("{}\n", .{try ModuleDef.node(allocator, try Path.allocate(allocator, ArrayList([]const u8).init(allocator), false), null)});
+    p("{}\n", .{try Path.allocate(allocator, .{ .names = ArrayList([]const u8).init(allocator), .is_global = false })});
+    p("{}\n", .{Node.init(try Path.allocate(allocator, .{ .names = ArrayList([]const u8).init(allocator), .is_global = false }))});
+    p("{}\n", .{try ClassDef.node(allocator, try Path.allocate(allocator, .{ .names = ArrayList([]const u8).init(allocator), .is_global = false }), null)});
+    p("{}\n", .{try ModuleDef.node(allocator, try Path.allocate(allocator, .{ .names = ArrayList([]const u8).init(allocator), .is_global = false }), null)});
     p("{}\n", .{try While.node(allocator, try BoolLiteral.node(allocator, true), null)});
     p("{}\n", .{try Until.node(allocator, try BoolLiteral.node(allocator, true), null)});
     p("{}\n", .{try Rescue.node(allocator, null)});
@@ -2113,21 +2026,21 @@ pub fn main() !void {
     p("{}\n", .{try LibDef.node(allocator, "Foo", null, .{})});
     p("{}\n", .{try CStructOrUnionDef.node(allocator, "Foo", null, .{})});
     p("{}\n", .{try MacroIf.node(allocator, try BoolLiteral.node(allocator, true), null, null)});
-    p("{}\n", .{(try Nop.node(allocator)).isNop()});
+    p("{}\n", .{(try Nop.node(allocator, .{})).isNop()});
     p("{}\n", .{(try BoolLiteral.node(allocator, true)).isTrueLiteral()});
     p("{}\n", .{(try BoolLiteral.node(allocator, false)).isFalseLiteral()});
     p("{}\n", .{(try NumberLiteral.fromNumber(allocator, 1)).singleExpression()});
-    p("{}\n", .{(try Expressions.node(allocator, ArrayList(Node).init(allocator), .{})).singleExpression()});
+    p("{}\n", .{(try Expressions.node(allocator, .{ .expressions = ArrayList(Node).init(allocator) })).singleExpression()});
     {
         var expressions = ArrayList(Node).init(allocator);
         try expressions.append(try NumberLiteral.fromNumber(allocator, 1));
-        p("{}\n", .{(try Expressions.node(allocator, expressions, .{})).singleExpression()});
+        p("{}\n", .{(try Expressions.node(allocator, .{ .expressions = expressions })).singleExpression()});
     }
     {
         var expressions = ArrayList(Node).init(allocator);
         try expressions.append(try NumberLiteral.fromNumber(allocator, 1));
         try expressions.append(try NumberLiteral.fromNumber(allocator, 2));
-        p("{}\n", .{(try Expressions.node(allocator, expressions, .{})).singleExpression()});
+        p("{}\n", .{(try Expressions.node(allocator, .{ .expressions = expressions })).singleExpression()});
     }
     {
         var values = ArrayList(Node).init(allocator);
@@ -2148,7 +2061,7 @@ pub fn main() !void {
         p("{}\n", .{array2.array_literal.elements.items[0]});
         p("{}\n", .{array3.array_literal.elements.items[0]});
         p("{}\n", .{array3.array_literal.elements.items[1]});
-        var node = try Nop.node(allocator);
+        var node = try Nop.node(allocator, .{});
         node.setLocation(Location.new("foo", 1, 2));
         node.setEndLocation(Location.new("bar", 3, 4));
         p("{?} {?}\n", .{node.location(), node.endLocation()});

@@ -196,7 +196,7 @@ pub fn parseExpressionsInternal(parser: *Parser) !Node {
     const allocator = lexer.allocator;
 
     if (parser.atEndToken()) {
-        return Nop.node(allocator);
+        return Nop.node(allocator, .{});
     }
 
     const exp = try parser.parseMultiAssign();
@@ -603,7 +603,10 @@ inline fn parseOperator(
                         .{ .name_location = name_location },
                     );
                 } else {
-                    left = try options.node.node(allocator, left, right);
+                    left = try options.node.node(allocator, .{
+                        .left = left,
+                        .right = right,
+                    });
                 }
                 left.setLocation(location);
                 left.copyEndLocation(right);
@@ -768,10 +771,11 @@ pub fn parsePrefix(parser: *Parser) !Node {
             try parser.checkVoidExpressionKeyword();
             const obj = try parser.parsePrefix();
             if (token_type == .op_bang) {
-                const node = try Not.node(allocator, obj);
-                node.setLocation(location);
-                node.copyEndLocation(obj);
-                return node;
+                return Not.node(allocator, .{
+                    .exp = obj,
+                    .location = location,
+                    .end_location = obj.endLocation(),
+                });
             } else {
                 const node = try Call.node(
                     allocator,
@@ -898,9 +902,10 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                 try parser.skipNodeToken(v);
                 return v;
             } else {
-                const node = try Global.node(allocator, name);
-                node.setLocation(location);
-                return node;
+                return Global.node(allocator, .{
+                    .name = name,
+                    .location = location,
+                });
             }
         },
         .global_match_data_index => {
@@ -933,8 +938,10 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                     error.InvalidCharacter => return err,
                 }
             };
-            const receiver = try Global.node(allocator, "$~");
-            receiver.setLocation(location);
+            const receiver = try Global.node(allocator, .{
+                .name = "$~",
+                .location = location,
+            });
             var args = ArrayList(Node).init(allocator);
             try args.append(try NumberLiteral.fromNumber(allocator, index));
             const node = try Call.node(allocator, receiver, method, args, .{});
@@ -970,6 +977,13 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                             };
                         },
                         // TODO
+                        .@"enum" => {
+                            return try parser.checkTypeDeclaration() orelse {
+                                try parser.checkNotInsideDef("can't define enum");
+                                return Node.init(try parser.parseEnumDef());
+                            };
+                        },
+                        // TODO
                         .lib => {
                             return try parser.checkTypeDeclaration() orelse {
                                 try parser.checkNotInsideDef("can't define lib");
@@ -1002,7 +1016,7 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
             return parser.newNodeCheckTypeDeclaration(ClassVar);
         },
         .underscore => {
-            const node = try Underscore.node(allocator);
+            const node = try Underscore.node(allocator, .{});
             try parser.skipNodeToken(node);
             return node;
         },
@@ -1042,12 +1056,11 @@ pub fn parseTypeDeclaration(parser: *Parser, v: Node) !Node {
         try lexer.skipTokenAndSpaceOrNewline();
         value = try parser.parseOpAssignNoControl(.{});
     }
-    const node = try TypeDeclaration.node(
-        allocator,
-        v,
-        var_type,
-        .{ .value = value },
-    );
+    const node = try TypeDeclaration.node(allocator, .{
+        .@"var" = v,
+        .declared_type = var_type,
+        .value = value,
+    });
     node.copyLocation(v);
     return node;
 }
@@ -1078,7 +1091,7 @@ pub fn newNodeCheckTypeDeclaration(
     const allocator = lexer.allocator;
 
     const name = lexer.token.value.string;
-    const v = try Exp.node(allocator, name);
+    const v = try Exp.node(allocator, .{ .name = name });
     v.setLocation(lexer.token.location());
     v.setEndLocation(lexer.tokenEndLocation());
     lexer.wants_regex = false;
@@ -1153,12 +1166,11 @@ pub fn parseParenthesizedExpression(parser: *Parser) !Node {
     if (lexer.token.type == .op_rparen) {
         const end_location = lexer.tokenEndLocation();
         var expressions = ArrayList(Node).init(allocator);
-        try expressions.append(try Nop.node(allocator));
-        const node = try Expressions.node(
-            allocator,
-            expressions,
-            .{ .keyword = .paren },
-        );
+        try expressions.append(try Nop.node(allocator, .{}));
+        const node = try Expressions.node(allocator, .{
+            .expressions = expressions,
+            .keyword = .paren,
+        });
         node.setLocation(location);
         node.setEndLocation(end_location);
         try parser.skipNodeToken(node);
@@ -1493,10 +1505,9 @@ pub fn parseArrayLiteral(parser: *Parser) !Node {
 
             if (lexer.token.type == .op_star) {
                 try lexer.skipTokenAndSpaceOrNewline();
-                const exp = try Splat.node(
-                    allocator,
-                    try parser.parseOpAssignNoControl(.{}),
-                );
+                const exp = try Splat.node(allocator, .{
+                    .exp = try parser.parseOpAssignNoControl(.{}),
+                });
                 exp.setLocation(exp_location);
                 try exps.append(exp);
             } else {
@@ -1584,7 +1595,9 @@ pub fn parseHashOrTupleLiteral(
     const key_location = lexer.token.location();
     var first_key = try parser.parseOpAssignNoControl(.{});
     if (first_is_splat) {
-        first_key = try Splat.node(allocator, first_key);
+        first_key = try Splat.node(allocator, .{
+            .exp = first_key,
+        });
         first_key.setLocation(location);
     }
     switch (lexer.token.type) {
@@ -2140,15 +2153,15 @@ pub fn parseAtomicType(parser: *Parser) !Node {
         .ident => {
             if (lexer.token.value.isKeyword(.self)) {
                 try lexer.skipTokenAndSpace();
-                const node = try Self.node(allocator);
-                node.setLocation(location);
-                return node;
+                return Self.node(allocator, .{
+                    .location = location,
+                });
             }
             if (lexer.token.value.isString("self?")) {
                 try lexer.skipTokenAndSpace();
-                const node = try Self.node(allocator);
-                node.setLocation(location);
-                return parser.makeNilableType(node);
+                return parser.makeNilableType(try Self.node(allocator, .{
+                    .location = location,
+                }));
             }
             if (lexer.token.value.isKeyword(.typeof)) {
                 return parser.parseTypeof();
@@ -2157,9 +2170,7 @@ pub fn parseAtomicType(parser: *Parser) !Node {
         },
         .underscore => {
             try lexer.skipTokenAndSpace();
-            const node = try Underscore.node(allocator);
-            node.setLocation(location);
-            return node;
+            return Underscore.node(allocator, .{});
         },
         .@"const", .op_colon_colon => {
             return parser.parseGeneric(.{});
@@ -2206,10 +2217,10 @@ pub fn parseGeneric2(
         options.location,
     );
     // TODO: implement
-    return path;
+    return path.toNode();
 }
 
-pub fn parsePath(parser: *Parser) !Node {
+pub fn parsePath(parser: *Parser) !*Path {
     const lexer = &parser.lexer;
     const location = lexer.token.location();
 
@@ -2229,7 +2240,7 @@ pub fn parsePath2(
     parser: *Parser,
     is_global: bool,
     location: Location,
-) !Node {
+) !*Path {
     const lexer = &parser.lexer;
     const allocator = lexer.allocator;
 
@@ -2249,10 +2260,12 @@ pub fn parsePath2(
         try lexer.skipToken();
     }
 
-    const node = try Path.node(allocator, names, is_global);
-    node.setLocation(location);
-    node.setEndLocation(end_location);
-    return node;
+    return Path.allocate(allocator, .{
+        .names = names,
+        .is_global = is_global,
+        .location = location,
+        .end_location = end_location,
+    });
 }
 
 // parseTypeArgs
@@ -2277,7 +2290,7 @@ pub fn parseTypeSplatUnionType(parser: *Parser) !Node {
 
     const t = try parser.parseUnionType();
     if (splat) {
-        const node = try Splat.node(allocator, t);
+        const node = try Splat.node(allocator, .{ .exp = t });
         node.setLocation(location);
         return node;
     }
@@ -2648,8 +2661,9 @@ pub fn parseLibBodyExpWithoutLocation(parser: *Parser) !Node {
                 return parser.parseCStructOrUnion(.{
                     .is_union = true,
                 });
-            } // TODO
-            else {
+            } else if (lexer.token.value.isKeyword(.@"enum")) {
+                return Node.init(try parser.parseEnumDef());
+            } else {
                 return parser.unexpectedToken(.{});
             }
         },
@@ -2692,7 +2706,7 @@ pub fn parseSizeof2(parser: *Parser, comptime Exp: type) !Node {
     try parser.check(.op_rparen);
     try lexer.skipTokenAndSpace();
 
-    const node = try Exp.node(allocator, t);
+    const node = try Exp.node(allocator, .{ .exp = t });
     node.setLocation(location);
     node.setEndLocation(end_location);
     return node;
@@ -2717,10 +2731,9 @@ pub fn parseOffsetof(parser: *Parser) !Node {
     try lexer.skipTokenAndSpaceOrNewline();
     const offset = switch (lexer.token.type) {
         .instance_var => blk: {
-            break :blk try InstanceVar.node(
-                allocator,
-                lexer.token.value.string,
-            );
+            break :blk try InstanceVar.node(allocator, .{
+                .name = lexer.token.value.string,
+            });
         },
         .number => blk: {
             if (lexer.token.number_kind != .i32)
@@ -2890,21 +2903,65 @@ pub fn parseCStructOrUnionFields(
     try lexer.skipStatementEnd();
 
     for (vars.items) |v| {
-        const node = try TypeDeclaration.node(
-            allocator,
-            v,
-            var_type,
-            .{},
-        );
+        const node = try TypeDeclaration.node(allocator, .{
+            .@"var" = v,
+            .declared_type = var_type,
+        });
         node.copyLocation(v);
         node.copyEndLocation(var_type); // TODO: inaccurate
         try exps.append(node);
     }
 }
 
-// parseEnumDef
+pub fn parseEnumDef(parser: *Parser) !*EnumDef {
+    const lexer = &parser.lexer;
+    const allocator = lexer.allocator;
+
+    const location = lexer.token.location();
+    const doc = lexer.token.doc();
+
+    try lexer.skipTokenAndSpaceOrNewline();
+
+    const name = try parser.parsePath();
+    try lexer.skipSpace();
+
+    var base_type: ?Node = null;
+    switch (lexer.token.type) {
+        .op_colon => {
+            try lexer.skipTokenAndSpaceOrNewline();
+            base_type = try parser.parseBareProcType();
+            try lexer.skipStatementEnd();
+        },
+        .op_semicolon, .newline => {
+            try lexer.skipStatementEnd();
+        },
+        else => {
+            return parser.unexpectedToken(.{});
+        },
+    }
+
+    const members = try parser.parseEnumBodyExpressions();
+
+    try parser.checkIdentKeyword(.end);
+    const end_location = lexer.tokenEndLocation();
+    try lexer.skipTokenAndSpace();
+
+    return EnumDef.allocate(allocator, .{
+        .name = name,
+        .members = members,
+        .base_type = base_type,
+        .doc = doc,
+        .location = location,
+        .end_location = end_location,
+    });
+}
+
 // parseEnumBody
-// fn parseEnumBodyExpressions
+
+fn parseEnumBodyExpressions(parser: *Parser) !ArrayList(Node) {
+    // TODO: implement
+    return ArrayList(Node).init(parser.lexer.allocator);
+}
 
 pub fn skipNodeToken(parser: *Parser, node: Node) !void {
     const lexer = &parser.lexer;
@@ -3372,7 +3429,7 @@ fn _main() !void {
     _ = try parser.checkVoidExpressionKeyword();
 
     if (parser.checkVoidValue(
-        try Return.node(lexer.allocator),
+        try Return.node(lexer.allocator, .{}),
         Location.new(null, 0, 0),
     )) |_| unreachable else |err| {
         assert(err == error.SyntaxError);
@@ -3405,13 +3462,13 @@ fn _main() !void {
     parser = try Parser.new("::Foo::Bar::Baz");
     lexer = &parser.lexer;
     try lexer.skipToken();
-    node = try parser.parsePath();
-    assert(node.path.is_global);
+    var path = try parser.parsePath();
+    assert(path.is_global);
     assert(
-        node.endLocation().?.compare(.eq, Location.new("", 1, 15)),
+        path.end_location.?.compare(.eq, Location.new("", 1, 15)),
     );
     var expected_names = &[_][]const u8{"Foo", "Bar", "Baz"};
-    var actual_names = node.path.names.items;
+    var actual_names = path.names.items;
     assert(expected_names.len == actual_names.len);
     var i: usize = 0;
     while (i < expected_names.len) : (i += 1) {
@@ -3756,6 +3813,24 @@ fn _main() !void {
     lexer = &parser.lexer;
     node = try parser.parse();
     assert(node == .lib_def);
+
+    // parseEnumDef
+    parser = try Parser.new(
+        \\lib Foo
+        \\  enum Bar; end
+        \\end
+        \\enum Fizz : Buzz
+        \\end
+    );
+    lexer = &parser.lexer;
+    node = try parser.parse();
+    assert(node == .expressions);
+    var expressions = node.expressions.expressions.items;
+    assert(expressions.len == 2);
+    node = expressions[0];
+    assert(node == .lib_def);
+    node = expressions[1];
+    assert(node == .enum_def);
 
     // p("{}\n", .{});
 
