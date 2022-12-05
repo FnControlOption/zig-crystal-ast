@@ -1102,9 +1102,11 @@ pub fn newNodeCheckTypeDeclaration(
     const allocator = lexer.allocator;
 
     const name = lexer.token.value.string;
-    const v = try NodeType.node(allocator, .{ .name = name });
-    v.setLocation(lexer.token.location());
-    v.setEndLocation(lexer.tokenEndLocation());
+    const v = try NodeType.node(allocator, .{
+        .name = name,
+        .location = lexer.token.location(),
+        .end_location = lexer.tokenEndLocation(),
+    });
     lexer.wants_regex = false;
     try lexer.skipTokenAndSpace();
 
@@ -1181,9 +1183,9 @@ pub fn parseParenthesizedExpression(parser: *Parser) !Node {
         const node = try Expressions.node(allocator, .{
             .expressions = expressions,
             .keyword = .paren,
+            .location = location,
+            .end_location = end_location,
         });
-        node.setLocation(location);
-        node.setEndLocation(end_location);
         try parser.skipNodeToken(node);
         return node;
     }
@@ -1521,11 +1523,10 @@ pub fn parseArrayLiteral(parser: *Parser) !Node {
 
             if (lexer.token.type == .op_star) {
                 try lexer.skipTokenAndSpaceOrNewline();
-                const exp = try Splat.node(allocator, .{
+                try exps.append(try Splat.node(allocator, .{
                     .exp = try parser.parseOpAssignNoControl(.{}),
-                });
-                exp.setLocation(exp_location);
-                try exps.append(exp);
+                    .location = exp_location,
+                }));
             } else {
                 try exps.append(
                     try parser.parseOpAssignNoControl(.{}),
@@ -1611,8 +1612,8 @@ pub fn parseHashOrTupleLiteral(
     if (first_is_splat) {
         first_key = try Splat.node(allocator, .{
             .exp = first_key,
+            .location = location,
         });
-        first_key.setLocation(location);
     }
     switch (lexer.token.type) {
         .op_colon => {
@@ -2306,9 +2307,10 @@ pub fn parseTypeSplatUnionType(parser: *Parser) !Node {
 
     const t = try parser.parseUnionType();
     if (splat) {
-        const node = try Splat.node(allocator, .{ .exp = t });
-        node.setLocation(location);
-        return node;
+        return Splat.node(allocator, .{
+            .exp = t,
+            .location = location,
+        });
     }
     return t;
 }
@@ -2732,10 +2734,11 @@ pub fn parseSizeof2(parser: *Parser, comptime NodeType: type) !Node {
     try parser.check(.op_rparen);
     try lexer.skipTokenAndSpace();
 
-    const node = try NodeType.node(allocator, .{ .exp = t });
-    node.setLocation(location);
-    node.setEndLocation(end_location);
-    return node;
+    return NodeType.node(allocator, .{
+        .exp = t,
+        .location = location,
+        .end_location = end_location,
+    });
 }
 
 pub fn parseOffsetof(parser: *Parser) !Node {
@@ -2920,13 +2923,12 @@ pub fn parseCStructOrUnionFields(
     try lexer.skipStatementEnd();
 
     for (vars.items) |v| {
-        const node = try TypeDeclaration.node(allocator, .{
+        try exps.append(try TypeDeclaration.node(allocator, .{
             .@"var" = v,
             .declared_type = var_type,
-        });
-        node.copyLocation(v);
-        node.copyEndLocation(var_type); // TODO: inaccurate
-        try exps.append(node);
+            .location = v.location(),
+            .end_location = var_type.endLocation(), // TODO: inaccurate
+        }));
     }
 }
 
