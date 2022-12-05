@@ -706,15 +706,7 @@ pub const Var = struct {
 
     name: []const u8,
 
-    pub fn allocate(allocator: Allocator, name: []const u8) !*@This() {
-        const instance = try allocator.create(@This());
-        instance.* = .{ .name = name };
-        return instance;
-    }
-
-    pub fn node(allocator: Allocator, name: []const u8) !Node {
-        return Node{ .@"var" = try allocate(allocator, name) };
-    }
+    pub usingnamespace NodeAllocator("var", @This());
 };
 
 pub const Block = struct {

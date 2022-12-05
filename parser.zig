@@ -353,7 +353,9 @@ pub fn parseMultiAssign(parser: *Parser) !Node {
 //         },
 //         .call => |call| {
 //             if (call.obj == null and call.args.items.len == 0) {
-//                 var v = try Var.node(allocator, call.anem);
+//                 var v = try Var.node(allocator, .{
+//                     .name = call.name,
+//                 });
 //                 v.copyLocation(lhs);
 //                 lhs = v;
 //             }
@@ -451,10 +453,9 @@ pub fn parseOpAssign(
                     }
 
                     if (atomic == .call) {
-                        const v = try Var.node(
-                            allocator,
-                            atomic.call.name,
-                        );
+                        const v = try Var.node(allocator, .{
+                            .name = atomic.call.name,
+                        });
                         v.copyLocation(atomic);
                         atomic = v;
                     }
@@ -891,8 +892,10 @@ pub fn parseAtomicWithoutLocation(parser: *Parser) !Node {
                 try lexer.skipTokenAndSpace();
                 break :blk lexer.token.type == .op_eq;
             }) {
-                const v = try Var.node(allocator, name);
-                v.setLocation(location);
+                const v = try Var.node(allocator, .{
+                    .name = name,
+                    .location = location,
+                });
                 try parser.pushVar(v);
                 try parser.skipNodeToken(v);
                 return v;
@@ -1030,8 +1033,10 @@ pub fn checkTypeDeclaration(parser: *Parser) !?Node {
 
     if (parser.nextComesColonSpace()) {
         const name = lexer.token.nameToString();
-        const v = try Var.node(allocator, name);
-        v.setLocation(lexer.token.location());
+        const v = try Var.node(allocator, .{
+            .name = name,
+            .location = lexer.token.location(),
+        });
         try lexer.skipTokenAndSpace();
         try parser.check(.op_colon);
         const node = try parser.parseTypeDeclaration(v);
@@ -1804,8 +1809,10 @@ pub fn parseVarOrCall(
     const doc = lexer.token.doc();
 
     if (lexer.token.type == .op_bang) {
-        const obj = try Var.node(allocator, "self");
-        obj.setLocation(location);
+        // const obj = try Var.node(allocator, .{
+        //     .name = "self",
+        //     .location = location,
+        // });
         // TODO: implement
         return parser.unexpectedToken(.{ .msg = "unimplemented" });
         // return parser.parseNegationSuffix(obj);
@@ -1852,13 +1859,13 @@ pub fn parseVarOrCall(
 
     // If the name is a var and '+' or '-' follow, never treat the name as a call
     if (is_var and parser.nextComesPlusOrMinus()) {
-        const v = try Var.node(allocator, name);
-        // TODO: add Var#doc property
-        _ = doc;
-        v.setLocation(name_location);
-        v.setEndLocation(end_location);
         try lexer.skipToken();
-        return v;
+        return Var.node(allocator, .{
+            .name = name,
+            // TODO: add Var#doc property?
+            .location = name_location,
+            .end_location = end_location,
+        });
     }
 
     lexer.wants_regex = false;
@@ -1976,7 +1983,7 @@ pub fn parseVarOrCall(
         }
     };
 
-    // TODO: node.setDoc(doc);
+    _ = doc; // TODO: node.setDoc(doc);
     node.setLocation(location);
     if (block != null and block.?.end_location != null) {
         end_location = block.?.end_location.?;
@@ -2870,27 +2877,19 @@ pub fn parseCStructOrUnionFields(
 
     var vars = ArrayList(Node).init(allocator);
     defer vars.deinit();
-    try vars.append(blk: {
-        const v = try Var.node(
-            allocator,
-            lexer.token.nameToString(),
-        );
-        v.setLocation(lexer.token.location());
-        break :blk v;
-    });
+    try vars.append(try Var.node(allocator, .{
+        .name = lexer.token.nameToString(),
+        .location = lexer.token.location(),
+    }));
 
     try lexer.skipTokenAndSpaceOrNewline();
 
     while (lexer.token.type == .op_comma) {
         try lexer.skipTokenAndSpaceOrNewline(); // TODO: redundant?
-
-        const v = try Var.node(
-            allocator,
-            try parser.checkIdent(),
-        );
-        v.setLocation(lexer.token.location());
-        try vars.append(v);
-
+        try vars.append(try Var.node(allocator, .{
+            .name = try parser.checkIdent(),
+            .location = lexer.token.location(),
+        }));
         try lexer.skipTokenAndSpaceOrNewline();
     }
 
@@ -3293,10 +3292,10 @@ fn _main() !void {
 
     assert(parser.isVarInScope("fizz") == false);
     assert(parser.isVarInScope("buzz") == false);
-    try parser.pushVar(try Var.node(lexer.allocator, "fizz"));
+    try parser.pushVar(try Var.node(lexer.allocator, .{ .name = "fizz" }));
     try parser.pushVars(blk: {
         var vars = ArrayList(Node).init(lexer.allocator);
-        try vars.append(try Var.node(lexer.allocator, "buzz"));
+        try vars.append(try Var.node(lexer.allocator, .{ .name = "buzz" }));
         break :blk vars;
     });
     assert(parser.isVarInScope("fizz"));
@@ -3347,7 +3346,7 @@ fn _main() !void {
         }));
     }
 
-    assert(canBeAssigned(try Var.node(lexer.allocator, "foo")));
+    assert(canBeAssigned(try Var.node(lexer.allocator, .{ .name = "foo" })));
     assert(
         canBeAssigned(try Call.node(lexer.allocator, .{
             .obj = null,
@@ -3357,12 +3356,12 @@ fn _main() !void {
     );
     assert(
         canBeAssigned(try Call.node(lexer.allocator, .{
-            .obj = try Var.node(lexer.allocator, "foo"),
+            .obj = try Var.node(lexer.allocator, .{ .name = "foo" }),
             .name = "[]",
             .args = blk: {
                 var args = ArrayList(Node).init(lexer.allocator);
-                try args.append(try Var.node(lexer.allocator, "bar"));
-                // try args.append(try Var.node(lexer.allocator, "fizz"));
+                try args.append(try Var.node(lexer.allocator, .{ .name = "bar" }));
+                // try args.append(try Var.node(lexer.allocator, .{ .name = "fizz" }));
                 break :blk args;
             },
         })),
@@ -3372,7 +3371,7 @@ fn _main() !void {
     lexer = &parser.lexer;
     try lexer.skipToken();
     var token_end_location = lexer.tokenEndLocation();
-    var node = try Var.node(lexer.allocator, "foo");
+    var node = try Var.node(lexer.allocator, .{ .name = "foo" });
     try parser.skipNodeToken(node);
     assert(node.endLocation().?.compare(.eq, token_end_location));
 
